@@ -1,0 +1,87 @@
+const { Router } = require('express');
+const asyncHandler = require('../utils/asyncHandler');
+const { requireAuth } = require('../middleware/auth');
+const usersService = require('../services/users.service');
+const devicesService = require('../services/notifications-devices.service');
+const configService = require('../services/config.service');
+const passesService = require('../services/passes.service');
+
+const router = Router();
+
+router.get(
+  '/preferences',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const prefs = await usersService.getNotificationPreferences(req.user.id);
+    res.json(prefs);
+  }),
+);
+
+router.patch(
+  '/preferences',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const prefs = await usersService.updateNotificationPreferences(req.user.id, req.body);
+    res.json(prefs);
+  }),
+);
+
+router.post(
+  '/devices',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    await devicesService.registerDevice(req.user.id, req.body);
+    res.status(201).json({ registered: true });
+  }),
+);
+
+router.delete(
+  '/devices/:token',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    await devicesService.unregisterDevice(req.user.id, decodeURIComponent(req.params.token));
+    res.status(204).send();
+  }),
+);
+
+module.exports = router;
+
+const configRouter = Router();
+
+configRouter.get(
+  '/disciplines',
+  asyncHandler(async (req, res) => {
+    res.json({ data: configService.getDisciplines() });
+  }),
+);
+
+configRouter.get(
+  '/plans',
+  asyncHandler(async (req, res) => {
+    res.json({ data: configService.getPlans() });
+  }),
+);
+
+configRouter.get(
+  '/app',
+  asyncHandler(async (req, res) => {
+    res.json(configService.getAppConfig());
+  }),
+);
+
+configRouter.get(
+  '/payments',
+  asyncHandler(async (req, res) => {
+    res.json(configService.getPaymentsConfig());
+  }),
+);
+
+configRouter.get(
+  '/pass-products',
+  asyncHandler(async (req, res) => {
+    res.json({ data: passesService.getPassProducts() });
+  }),
+);
+
+module.exports.notificationsRouter = router;
+module.exports.configRouter = configRouter;
