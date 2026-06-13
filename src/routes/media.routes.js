@@ -5,6 +5,7 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const asyncHandler = require('../utils/asyncHandler');
 const { badRequest } = require('../utils/errors');
+const { apiPublicUrl } = require('../config/env');
 
 const router = Router();
 
@@ -41,8 +42,16 @@ const upload = multer({
   },
 });
 
-function apiBaseUrl(req) {
-  return `${req.protocol}://${req.get('host')}/v1`;
+function publicApiV1Base(req) {
+  const configured = (process.env.MEDIA_PUBLIC_URL || apiPublicUrl || '').replace(/\/$/, '');
+  if (configured && !configured.includes('localhost')) {
+    if (configured.endsWith('/v1')) return configured;
+    return `${configured}/v1`;
+  }
+
+  const proto = req.get('x-forwarded-proto') || req.protocol;
+  const host = req.get('x-forwarded-host') || req.get('host');
+  return `${proto}://${host}/v1`;
 }
 
 router.post(
@@ -63,7 +72,7 @@ router.post(
 
     const ext = EXT_BY_TYPE[contentType] || path.extname(fileName) || '.jpg';
     const storedName = `${uuidv4()}${ext}`;
-    const base = apiBaseUrl(req);
+    const base = publicApiV1Base(req);
 
     res.json({
       uploadUrl: `${base}/media/upload`,
@@ -99,7 +108,7 @@ router.post(
     }
 
     res.status(201).json({
-      publicUrl: `${apiBaseUrl(req)}/media/files/${req.file.filename}`,
+      publicUrl: `${publicApiV1Base(req)}/media/files/${req.file.filename}`,
     });
   }),
 );

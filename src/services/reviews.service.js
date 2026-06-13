@@ -5,6 +5,7 @@ const {
   assertInstructorLinked,
   assertCompletedClassWithInstructor,
 } = require('./institutions.service');
+const { completePastBooking } = require('./bookings.service');
 
 async function createReview(user, body) {
   const { bookingId, rating, comment } = body;
@@ -17,10 +18,15 @@ async function createReview(user, body) {
 
   const { rows: bookings } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
   if (!bookings.length) throw notFound('Booking not found');
-  const booking = bookings[0];
+  let booking = bookings[0];
 
   if (booking.athlete_user_id !== user.id) {
     throw forbidden('Not your booking');
+  }
+
+  if (booking.status === 'confirmed') {
+    const completed = await completePastBooking(bookingId);
+    if (completed) booking = completed;
   }
 
   if (booking.status !== 'completed') {

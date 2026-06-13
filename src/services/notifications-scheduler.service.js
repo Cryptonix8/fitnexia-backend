@@ -42,7 +42,7 @@ async function processCompletedBookingsAndReviewInvites() {
      FROM classes c
      WHERE b.class_id = c.id
        AND b.status = 'confirmed'
-       AND c.start_at + (c.duration_minutes || ' minutes')::interval < now()
+       AND c.start_at + (COALESCE(c.duration_minutes, 60) || ' minutes')::interval < now()
      RETURNING b.id AS booking_id, b.athlete_user_id, b.class_id`,
   );
 

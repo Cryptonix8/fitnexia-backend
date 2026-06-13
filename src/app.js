@@ -8,6 +8,8 @@ const { frontendUrl } = require('./config/env');
 function createApp() {
   const app = express();
 
+  app.set('trust proxy', 1);
+
   app.use(cors({ origin: frontendUrl === '*' ? true : frontendUrl.split(',') }));
   app.use(express.json({ limit: '1mb' }));
 

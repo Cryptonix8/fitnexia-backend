@@ -1,6 +1,7 @@
 const { query } = require('../db/pool');
 const { notFound, forbidden, badRequest, conflict } = require('../utils/errors');
-const { serializeBooking, getBookingCount } = require('../utils/serializers');
+const { serializeBooking, serializeClassRow } = require('../utils/serializers');
+const { CLASS_SELECT, CLASS_JOINS } = require('./instructors.service');
 const { getClassRow } = require('./classes.service');
 const paymentsService = require('./payments.service');
 const passesService = require('./passes.service');
@@ -164,6 +165,9 @@ async function createBooking(user, body) {
   }
 }
 
+const PAST_BOOKING_END_SQL =
+  `c.start_at + (COALESCE(c.duration_minutes, 60) || ' minutes')::interval < now()`;
+
 async function completePastBookings(athleteUserId) {
   await query(
     `UPDATE bookings b
@@ -172,9 +176,49 @@ async function completePastBookings(athleteUserId) {
      WHERE b.class_id = c.id
        AND b.athlete_user_id = $1
        AND b.status = 'confirmed'
-       AND c.start_at + (c.duration_minutes || ' minutes')::interval < now()`,
+       AND ${PAST_BOOKING_END_SQL}`,
     [athleteUserId],
   );
+}
+
+async function completePastBooking(bookingId) {
+  const { rows } = await query(
+    `UPDATE bookings b
+     SET status = 'completed', completed_at = now()
+     FROM classes c
+     WHERE b.class_id = c.id
+       AND b.id = $1
+       AND b.status = 'confirmed'
+       AND ${PAST_BOOKING_END_SQL}
+     RETURNING b.*`,
+    [bookingId],
+  );
+  return rows[0] || null;
+}
+
+async function loadBookingClass(classId) {
+  const { rows } = await query(
+    `SELECT ${CLASS_SELECT} ${CLASS_JOINS} WHERE c.id = $1`,
+    [classId],
+  );
+  if (!rows.length) return undefined;
+  return serializeClassRow(rows[0]);
+}
+
+async function enrichBooking(row) {
+  const cls = await loadBookingClass(row.class_id);
+  const result = serializeBooking(row, cls);
+  if (row.status === 'pending_payment') {
+    let payment = await paymentsService.getLatestPaymentForBooking(row.id);
+    if (!payment?.checkout_url && row.athlete_pass_id) {
+      payment = await paymentsService.getLatestPaymentForPass(row.athlete_pass_id);
+    }
+    if (payment?.checkout_url) {
+      result.checkoutUrl = payment.checkout_url;
+      result.paymentId = payment.id;
+    }
+  }
+  return result;
 }
 
 async function listMyBookings(user) {
@@ -189,43 +233,25 @@ async function listMyBookings(user) {
     [user.id],
   );
 
-  return Promise.all(
-    rows.map(async (row) => {
-      const result = serializeBooking(row);
-      if (row.status === 'pending_payment') {
-        let payment = await paymentsService.getLatestPaymentForBooking(row.id);
-        if (!payment?.checkout_url && row.athlete_pass_id) {
-          payment = await paymentsService.getLatestPaymentForPass(row.athlete_pass_id);
-        }
-        if (payment?.checkout_url) {
-          result.checkoutUrl = payment.checkout_url;
-          result.paymentId = payment.id;
-        }
-      }
-      return result;
-    }),
-  );
+  return Promise.all(rows.map(enrichBooking));
 }
 
 async function getBooking(user, id) {
   await paymentsService.expireStalePendingBookings();
   const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [id]);
   if (!rows.length) throw notFound('Booking not found');
-  const booking = rows[0];
+  let booking = rows[0];
 
   if (user.role === 'athlete' && booking.athlete_user_id !== user.id) {
     throw forbidden('Not your booking');
   }
 
-  const result = serializeBooking(booking);
-  if (booking.status === 'pending_payment') {
-    const payment = await paymentsService.getLatestPaymentForBooking(id);
-    if (payment?.checkout_url) {
-      result.checkoutUrl = payment.checkout_url;
-      result.paymentId = payment.id;
-    }
+  if (user.role === 'athlete' && booking.status === 'confirmed') {
+    const completed = await completePastBooking(id);
+    if (completed) booking = completed;
   }
-  return result;
+
+  return enrichBooking(booking);
 }
 
 async function cancelBooking(user, id) {
@@ -281,10 +307,15 @@ async function markCompleted(bookingId) {
 async function reviewEligibility(user, bookingId) {
   const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [bookingId]);
   if (!rows.length) throw notFound('Booking not found');
-  const booking = rows[0];
+  let booking = rows[0];
 
   if (booking.athlete_user_id !== user.id) {
     throw forbidden('Not your booking');
+  }
+
+  if (booking.status === 'confirmed') {
+    const completed = await completePastBooking(bookingId);
+    if (completed) booking = completed;
   }
 
   const { rows: reviews } = await query(`SELECT id FROM reviews WHERE booking_id = $1`, [
@@ -320,4 +351,5 @@ module.exports = {
   syncBookingPayment,
   reviewEligibility,
   markCompleted,
+  completePastBooking,
 };
