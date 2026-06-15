@@ -1,8 +1,10 @@
 const { Router } = require('express');
 const asyncHandler = require('../utils/asyncHandler');
 const { requireAuth } = require('../middleware/auth');
+const { isDev } = require('../config/env');
 const usersService = require('../services/users.service');
 const devicesService = require('../services/notifications-devices.service');
+const notificationsService = require('../services/notifications.service');
 const configService = require('../services/config.service');
 const passesService = require('../services/passes.service');
 
@@ -41,6 +43,27 @@ router.delete(
   asyncHandler(async (req, res) => {
     await devicesService.unregisterDevice(req.user.id, decodeURIComponent(req.params.token));
     res.status(204).send();
+  }),
+);
+
+router.post(
+  '/test-push',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (!isDev) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Not found' } });
+      return;
+    }
+
+    const result = await notificationsService.dispatchPush({
+      userId: req.user.id,
+      type: 'password_reset',
+      title: req.body?.title || 'Fitnexia test',
+      body: req.body?.body || 'Push notification test',
+      data: { screen: '/(athlete)/(tabs)/bookings' },
+      skipDedupe: true,
+    });
+    res.json(result);
   }),
 );
 

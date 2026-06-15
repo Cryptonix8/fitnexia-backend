@@ -1,6 +1,6 @@
 const { query } = require('../db/pool');
 const { notFound, forbidden, badRequest, conflict } = require('../utils/errors');
-const { serializeBooking, serializeClassRow } = require('../utils/serializers');
+const { serializeBooking, serializeClassRow, getBookingCount } = require('../utils/serializers');
 const { CLASS_SELECT, CLASS_JOINS } = require('./instructors.service');
 const { getClassRow } = require('./classes.service');
 const paymentsService = require('./payments.service');
