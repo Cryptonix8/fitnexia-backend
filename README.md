@@ -64,4 +64,4 @@ Open the **dev build app** on your device/emulator — not Expo Go.
 - **Reviews:** `POST /v1/reviews`, `POST /v1/institutions/me/staff-reviews`
 - **Admin:** `GET /v1/admin/users`, `/admin/metrics/overview`
 
-See [../docs/API.md](../docs/API.md) for the full contract.
+See [./docs/API.md](./docs/API.md) for the full contract.

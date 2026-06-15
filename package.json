@@ -1,0 +1,31 @@
+{
+  "name": "fitnexia-api",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "db:migrate": "node src/db/migrate.js",
+    "db:migrate-passes": "node scripts/migrate-athlete-passes.js",
+    "db:migrate-marketplace": "node scripts/migrate-mp-marketplace.js",
+    "db:migrate-notifications": "node scripts/migrate-notifications.js",
+    "webhook:url": "node -e \"require('dotenv').config({path:require('path').resolve('.env')}); const u=(process.env.API_PUBLIC_URL||'http://localhost:'+(process.env.PORT||3001)).replace(/\\/$/,''); console.log(u+'/v1/webhooks/mercadopago')\""
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "firebase-admin": "^14.0.0",
+    "google-auth-library": "^10.7.0",
+    "js-yaml": "^4.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.1.1",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.10",
+    "pg": "^8.13.3",
+    "swagger-ui-express": "^5.0.1",
+    "uuid": "^11.1.0"
+  }
+}

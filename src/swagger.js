@@ -4,7 +4,7 @@ const yaml = require('js-yaml');
 const swaggerUi = require('swagger-ui-express');
 const { port } = require('./config/env');
 
-const SPEC_PATH = path.join(__dirname, '../../docs/openapi.yaml');
+const SPEC_PATH = path.join(__dirname, '../docs/openapi.yaml');
 
 function loadOpenApiSpec() {
   const raw = fs.readFileSync(SPEC_PATH, 'utf8');

@@ -1,0 +1,1929 @@
+openapi: 3.0.3
+info:
+  title: Fitnexia API
+  description: |
+    REST API for Fitnexia marketplace — shared by web, mobile (iOS/Android), and admin panel.
+    See [API.md](./API.md) for business rules and client notes.
+  version: 1.0.0
+  contact:
+    name: Fitnexia Engineering
+
+servers:
+  - url: https://api.fitnexia.com/v1
+    description: Production
+  - url: https://api.staging.fitnexia.com/v1
+    description: Staging
+  - url: http://localhost:3000/v1
+    description: Local development
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Instructors
+  - name: Institutions
+  - name: Classes
+  - name: Bookings
+  - name: Payments
+  - name: Reviews
+  - name: Credits
+  - name: Notifications
+  - name: Media
+  - name: Feed
+  - name: Config
+  - name: Support
+  - name: Admin
+  - name: Webhooks
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Register with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: Email already registered
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/oauth/google:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Login or register with Google
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleOAuthRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Refresh access token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout and invalidate refresh token
+      responses:
+        '204':
+          description: Logged out
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Request password reset email
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '204':
+          description: Email sent if account exists
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Reset password with token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '204':
+          description: Password updated
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user and profile summary
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+    delete:
+      tags: [Auth]
+      summary: Delete account (GDPR)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+      responses:
+        '204':
+          description: Account scheduled for deletion
+
+  /users/me/profile:
+    get:
+      tags: [Users]
+      summary: Get athlete profile
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AthleteProfile'
+    patch:
+      tags: [Users]
+      summary: Update athlete profile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AthleteProfile'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AthleteProfile'
+
+  /instructors/me:
+    get:
+      tags: [Instructors]
+      summary: Get own instructor profile
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Instructor'
+    patch:
+      tags: [Instructors]
+      summary: Update instructor profile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Instructor'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Instructor'
+
+  /instructors/me/availability-now:
+    patch:
+      tags: [Instructors]
+      summary: Toggle "Available now"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [availableNow]
+              properties:
+                availableNow:
+                  type: boolean
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  availableNow:
+                    type: boolean
+
+  /instructors/{id}:
+    get:
+      tags: [Instructors]
+      security: []
+      summary: Get public instructor profile
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Instructor'
+
+  /instructors/search:
+    get:
+      tags: [Instructors]
+      security: []
+      summary: Search instructors
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: discipline
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedInstructors'
+
+  /instructors/me/bookings:
+    get:
+      tags: [Instructors]
+      summary: List instructor bookings
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedBookings'
+
+  /instructors/me/metrics:
+    get:
+      tags: [Instructors]
+      summary: Instructor metrics
+      parameters:
+        - $ref: '#/components/parameters/period'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsSummary'
+
+  /institutions/me:
+    get:
+      tags: [Institutions]
+      summary: Get own institution profile
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Institution'
+    patch:
+      tags: [Institutions]
+      summary: Update institution profile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Institution'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Institution'
+
+  /institutions/{id}:
+    get:
+      tags: [Institutions]
+      security: []
+      summary: Get public institution profile
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Institution'
+
+  /institutions/me/instructors:
+    get:
+      tags: [Institutions]
+      summary: List institution instructors
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InstitutionInstructor'
+    post:
+      tags: [Institutions]
+      summary: Link instructor to institution
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [instructorId]
+              properties:
+                instructorId:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstitutionInstructor'
+
+  /institutions/me/instructors/{id}:
+    patch:
+      tags: [Institutions]
+      summary: Update linked instructor
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstitutionInstructor'
+    delete:
+      tags: [Institutions]
+      summary: Unlink instructor
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Unlinked
+
+  /institutions/me/instructors/invite:
+    post:
+      tags: [Institutions]
+      summary: Invite instructor by email
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '201':
+          description: Invitation sent
+
+  /institutions/me/classes:
+    get:
+      tags: [Institutions]
+      summary: List institution classes
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedClasses'
+
+  /institutions/me/metrics:
+    get:
+      tags: [Institutions]
+      summary: Institution dashboard metrics
+      parameters:
+        - $ref: '#/components/parameters/period'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsSummary'
+
+  /institutions/me/bookings/dashboard:
+    get:
+      tags: [Institutions]
+      summary: Institution bookings overview
+      parameters:
+        - $ref: '#/components/parameters/period'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsSummary'
+
+  /classes/search:
+    get:
+      tags: [Classes]
+      security: []
+      summary: Search classes with filters
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: discipline
+          in: query
+          schema:
+            type: string
+        - name: modality
+          in: query
+          schema:
+            $ref: '#/components/schemas/Modality'
+        - name: level
+          in: query
+          schema:
+            $ref: '#/components/schemas/ClassLevel'
+        - name: language
+          in: query
+          schema:
+            type: string
+        - name: priceMin
+          in: query
+          schema:
+            type: integer
+        - name: priceMax
+          in: query
+          schema:
+            type: integer
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: lat
+          in: query
+          schema:
+            type: number
+            format: double
+        - name: lng
+          in: query
+          schema:
+            type: number
+            format: double
+        - name: radiusKm
+          in: query
+          schema:
+            type: number
+            default: 10
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [price_asc, date_asc, rating_desc, distance_asc]
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedClasses'
+
+  /classes/map:
+    get:
+      tags: [Classes]
+      security: []
+      summary: Map markers for class search
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: radiusKm
+          in: query
+          schema:
+            type: number
+            default: 10
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ClassMapMarker'
+
+  /classes:
+    post:
+      tags: [Classes]
+      summary: Create a class
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClassRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Class'
+
+  /classes/mine:
+    get:
+      tags: [Classes]
+      summary: List own classes (instructor)
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [upcoming, past]
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedClasses'
+
+  /classes/{id}:
+    get:
+      tags: [Classes]
+      security: []
+      summary: Get class by ID
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Class'
+    patch:
+      tags: [Classes]
+      summary: Update class
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClassRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Class'
+    delete:
+      tags: [Classes]
+      summary: Delete class
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Deleted
+
+  /classes/{id}/cancel:
+    post:
+      tags: [Classes]
+      summary: Cancel class and refund all bookings
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Class cancelled
+
+  /classes/{id}/bookings:
+    get:
+      tags: [Classes]
+      summary: List bookings for a class (provider)
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedBookings'
+
+  /classes/{classId}/waitlist:
+    post:
+      tags: [Bookings]
+      summary: Join class waitlist
+      parameters:
+        - name: classId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaitlistEntry'
+
+  /feed/home:
+    get:
+      tags: [Feed]
+      summary: Athlete home feed
+      parameters:
+        - name: lat
+          in: query
+          schema:
+            type: number
+        - name: lng
+          in: query
+          schema:
+            type: number
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeFeed'
+
+  /bookings:
+    post:
+      tags: [Bookings]
+      summary: Create booking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateBookingResponse'
+        '409':
+          description: Class full
+
+  /bookings/me:
+    get:
+      tags: [Bookings]
+      summary: List my bookings
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [upcoming, past, cancelled]
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedBookings'
+
+  /bookings/{id}:
+    get:
+      tags: [Bookings]
+      summary: Get booking detail
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /bookings/{id}/cancel:
+    post:
+      tags: [Bookings]
+      summary: Cancel booking
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /bookings/{id}/review-eligibility:
+    get:
+      tags: [Reviews]
+      summary: Check if user can review this booking
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eligible:
+                    type: boolean
+                  reason:
+                    type: string
+                    nullable: true
+
+  /waitlist/{id}/confirm:
+    post:
+      tags: [Bookings]
+      summary: Confirm waitlist spot (within 2h window)
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+
+  /payments/intents:
+    post:
+      tags: [Payments]
+      summary: Create payment intent for booking
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bookingId]
+              properties:
+                bookingId:
+                  type: string
+                  format: uuid
+                method:
+                  type: string
+                  enum: [card, apple_pay, google_pay]
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntent'
+
+  /payments/{id}:
+    get:
+      tags: [Payments]
+      summary: Get payment status
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+
+  /payments/me/history:
+    get:
+      tags: [Payments]
+      summary: User payment history
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Payment'
+
+  /payouts/me:
+    get:
+      tags: [Payments]
+      summary: Instructor/institution payout history
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Payout'
+
+  /payouts/me/summary:
+    get:
+      tags: [Payments]
+      summary: Revenue summary
+      parameters:
+        - $ref: '#/components/parameters/period'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutSummary'
+
+  /payouts/me/export.csv:
+    get:
+      tags: [Payments]
+      summary: Export payouts as CSV
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  /reviews:
+    post:
+      tags: [Reviews]
+      summary: Create review for attended class
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+
+  /instructors/{id}/reviews:
+    get:
+      tags: [Reviews]
+      security: []
+      summary: List instructor reviews
+      parameters:
+        - $ref: '#/components/parameters/id'
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Review'
+
+  /reviews/{id}/response:
+    post:
+      tags: [Reviews]
+      summary: Instructor public response to review
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [comment]
+              properties:
+                comment:
+                  type: string
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+
+  /credits/me:
+    get:
+      tags: [Credits]
+      summary: Get loyalty credit balance
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditBalance'
+
+  /credits/me/transactions:
+    get:
+      tags: [Credits]
+      summary: Credit transaction history
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CreditTransaction'
+
+  /notifications/devices:
+    post:
+      tags: [Notifications]
+      summary: Register FCM device token (mobile)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, platform]
+              properties:
+                token:
+                  type: string
+                platform:
+                  type: string
+                  enum: [ios, android]
+      responses:
+        '201':
+          description: Registered
+
+  /notifications/devices/{token}:
+    delete:
+      tags: [Notifications]
+      summary: Unregister device token
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Removed
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: In-app notification center
+      parameters:
+        - name: unreadOnly
+          in: query
+          schema:
+            type: boolean
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+
+  /notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Mark notification as read
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Mark all notifications as read
+      responses:
+        '204':
+          description: Done
+
+  /media/presign:
+    post:
+      tags: [Media]
+      summary: Get presigned upload URL
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [purpose, contentType, fileName]
+              properties:
+                purpose:
+                  type: string
+                  enum: [avatar, gallery, document]
+                contentType:
+                  type: string
+                fileName:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl:
+                    type: string
+                    format: uri
+                  publicUrl:
+                    type: string
+                    format: uri
+                  expiresAt:
+                    type: string
+                    format: date-time
+
+  /config/disciplines:
+    get:
+      tags: [Config]
+      security: []
+      summary: List sports/disciplines
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    slug:
+                      type: string
+                    name:
+                      type: string
+
+  /config/app:
+    get:
+      tags: [Config]
+      security: []
+      summary: App config and feature flags
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppConfig'
+
+  /support/tickets:
+    post:
+      tags: [Support]
+      summary: Create support ticket
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, message]
+              properties:
+                subject:
+                  type: string
+                message:
+                  type: string
+                category:
+                  type: string
+      responses:
+        '201':
+          description: Ticket created
+
+  /webhooks/mercadopago:
+    post:
+      tags: [Webhooks]
+      security: []
+      summary: Mercado Pago payment webhook
+      responses:
+        '200':
+          description: Processed
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 20
+    period:
+      name: period
+      in: query
+      schema:
+        type: string
+        enum: [day, week, month]
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PaginatedClasses:
+      description: Paginated class list
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/PaginationMeta'
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ClassListItem'
+    PaginatedBookings:
+      description: Paginated bookings
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/PaginationMeta'
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Booking'
+    PaginatedInstructors:
+      description: Paginated instructors
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/PaginationMeta'
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Instructor'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+
+    PaginationMeta:
+      type: object
+      properties:
+        meta:
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+            totalPages:
+              type: integer
+
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: integer
+          description: Minor units (cents)
+        currency:
+          type: string
+          example: USD
+
+    UserRole:
+      type: string
+      enum: [athlete, instructor, institution, admin]
+
+    Modality:
+      type: string
+      enum: [in_person, online]
+
+    ClassLevel:
+      type: string
+      enum: [beginner, intermediate, advanced]
+
+    BookingStatus:
+      type: string
+      enum:
+        - pending_payment
+        - confirmed
+        - cancelled
+        - refunded
+        - completed
+        - no_show
+
+    PaymentModel:
+      type: string
+      enum: [per_class, monthly_unlimited, per_period]
+
+    RegisterRequest:
+      type: object
+      required: [email, password, role, firstName, lastName, acceptTerms]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        role:
+          $ref: '#/components/schemas/UserRole'
+        firstName:
+          type: string
+        lastName:
+          type: string
+        acceptTerms:
+          type: boolean
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        deviceToken:
+          type: string
+        platform:
+          type: string
+          enum: [ios, android]
+
+    GoogleOAuthRequest:
+      type: object
+      properties:
+        idToken:
+          type: string
+        code:
+          type: string
+        redirectUri:
+          type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
+        deviceToken:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+            role:
+              $ref: '#/components/schemas/UserRole'
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+
+    MeResponse:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+            role:
+              $ref: '#/components/schemas/UserRole'
+        profile:
+          oneOf:
+            - $ref: '#/components/schemas/AthleteProfile'
+            - $ref: '#/components/schemas/Instructor'
+            - $ref: '#/components/schemas/Institution'
+
+    AthleteProfile:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        photoUrl:
+          type: string
+          format: uri
+        favoriteSports:
+          type: array
+          items:
+            type: string
+        locale:
+          type: string
+
+    Instructor:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        photoUrl:
+          type: string
+        bio:
+          type: string
+        disciplines:
+          type: array
+          items:
+            type: string
+        certifications:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              issuer:
+                type: string
+              year:
+                type: integer
+        hourlyRate:
+          $ref: '#/components/schemas/Money'
+        verified:
+          type: boolean
+        availableNow:
+          type: boolean
+        averageRating:
+          type: number
+        reviewCount:
+          type: integer
+        plan:
+          type: string
+          enum: [basic, pro, institutional]
+
+    Institution:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        logoUrl:
+          type: string
+        description:
+          type: string
+        location:
+          type: object
+          properties:
+            address:
+              type: string
+            city:
+              type: string
+            country:
+              type: string
+            lat:
+              type: number
+            lng:
+              type: number
+        gallery:
+          type: array
+          items:
+            type: string
+            format: uri
+        verified:
+          type: boolean
+        plan:
+          type: string
+
+    InstitutionInstructor:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        photoUrl:
+          type: string
+
+    CreateClassRequest:
+      type: object
+      required: [title, discipline, modality, startAt, durationMinutes, price]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        discipline:
+          type: string
+        modality:
+          $ref: '#/components/schemas/Modality'
+        level:
+          $ref: '#/components/schemas/ClassLevel'
+        language:
+          type: string
+        startAt:
+          type: string
+          format: date-time
+        durationMinutes:
+          type: integer
+        price:
+          $ref: '#/components/schemas/Money'
+        capacity:
+          type: integer
+        location:
+          type: object
+          properties:
+            address:
+              type: string
+            lat:
+              type: number
+            lng:
+              type: number
+        institutionId:
+          type: string
+          format: uuid
+        instructorId:
+          type: string
+          format: uuid
+        cancellationPolicyHours:
+          type: integer
+          default: 24
+        recurrence:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            frequency:
+              type: string
+              enum: [weekly]
+            weekdays:
+              type: array
+              items:
+                type: integer
+            until:
+              type: string
+              format: date
+
+    Class:
+      allOf:
+        - $ref: '#/components/schemas/ClassListItem'
+        - type: object
+          properties:
+            description:
+              type: string
+            cancellationPolicyHours:
+              type: integer
+
+    ClassListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        discipline:
+          type: string
+        modality:
+          $ref: '#/components/schemas/Modality'
+        startAt:
+          type: string
+          format: date-time
+        durationMinutes:
+          type: integer
+        price:
+          $ref: '#/components/schemas/Money'
+        capacity:
+          type: integer
+        spotsLeft:
+          type: integer
+        instructor:
+          type: object
+          properties:
+            id:
+              type: string
+            displayName:
+              type: string
+            photoUrl:
+              type: string
+        institution:
+          type: object
+          nullable: true
+        location:
+          type: object
+          properties:
+            lat:
+              type: number
+            lng:
+              type: number
+            label:
+              type: string
+        averageRating:
+          type: number
+
+    ClassMapMarker:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        lat:
+          type: number
+        lng:
+          type: number
+        title:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        startAt:
+          type: string
+          format: date-time
+
+    HomeFeed:
+      type: object
+      properties:
+        recommended:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClassListItem'
+        nearby:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClassListItem'
+        popular:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClassListItem'
+
+    CreateBookingRequest:
+      type: object
+      required: [classId, paymentModel]
+      properties:
+        classId:
+          type: string
+          format: uuid
+        paymentModel:
+          $ref: '#/components/schemas/PaymentModel'
+        useCredits:
+          type: boolean
+          default: false
+        promoCode:
+          type: string
+          nullable: true
+
+    CreateBookingResponse:
+      type: object
+      properties:
+        booking:
+          $ref: '#/components/schemas/Booking'
+        payment:
+          type: object
+          properties:
+            provider:
+              type: string
+              example: mercado_pago
+            preferenceId:
+              type: string
+            checkoutUrl:
+              type: string
+              format: uri
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/BookingStatus'
+        classId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        price:
+          $ref: '#/components/schemas/Money'
+        createdAt:
+          type: string
+          format: date-time
+
+    WaitlistEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+        classId:
+          type: string
+          format: uuid
+
+    PaymentIntent:
+      type: object
+      properties:
+        id:
+          type: string
+        checkoutUrl:
+          type: string
+        preferenceId:
+          type: string
+
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        amount:
+          $ref: '#/components/schemas/Money'
+        bookingId:
+          type: string
+          format: uuid
+
+    Payout:
+      type: object
+      properties:
+        id:
+          type: string
+        amount:
+          $ref: '#/components/schemas/Money'
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    PayoutSummary:
+      type: object
+      properties:
+        gross:
+          type: integer
+        platformFee:
+          type: integer
+        net:
+          type: integer
+        currency:
+          type: string
+        commissionRate:
+          type: number
+        plan:
+          type: string
+
+    CreateReviewRequest:
+      type: object
+      required: [bookingId, rating]
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+
+    Review:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+        comment:
+          type: string
+        authorName:
+          type: string
+        response:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    CreditBalance:
+      type: object
+      properties:
+        balance:
+          type: integer
+        creditsUntilReward:
+          type: integer
+        expiresAt:
+          type: string
+          format: date-time
+        lastBookingAt:
+          type: string
+          format: date-time
+        freeClassEligible:
+          type: boolean
+        maxFreeClassValue:
+          $ref: '#/components/schemas/Money'
+
+    CreditTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [earned, redeemed, expired]
+        amount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    MetricsSummary:
+      type: object
+      properties:
+        bookings:
+          type: integer
+        revenue:
+          $ref: '#/components/schemas/Money'
+        attendanceRate:
+          type: number
+
+    AppConfig:
+      type: object
+      properties:
+        minIosVersion:
+          type: string
+        minAndroidVersion:
+          type: string
+        features:
+          type: object
+          properties:
+            streaming:
+              type: boolean
+            recordedClasses:
+              type: boolean
+            applePay:
+              type: boolean
