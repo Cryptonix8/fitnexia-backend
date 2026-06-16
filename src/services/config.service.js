@@ -1,13 +1,4 @@
-const DISCIPLINES = [
-  'Yoga',
-  'Tennis',
-  'Padel',
-  'CrossFit',
-  'HIIT',
-  'Pilates',
-  'Boxing',
-  'Running',
-];
+const DISCIPLINES = require('../config/disciplines').DISCIPLINES;
 
 const { getPlans: getPlansFromConfig } = require('../config/plans');
 

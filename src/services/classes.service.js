@@ -1,5 +1,6 @@
 const { query } = require('../db/pool');
 const { notFound, forbidden, badRequest, conflict } = require('../utils/errors');
+const { isValidDiscipline } = require('../config/disciplines');
 const { serializeClassRow, getBookingCount } = require('../utils/serializers');
 const { parsePagination, paginatedResponse } = require('../utils/pagination');
 const { CLASS_SELECT, CLASS_JOINS } = require('./instructors.service');
@@ -57,6 +58,9 @@ async function createClass(user, body) {
 
   if (!title?.trim() || !discipline || !modality || !startAt || !durationMinutes || !price) {
     throw badRequest('title, discipline, modality, startAt, durationMinutes, and price are required');
+  }
+  if (!isValidDiscipline(discipline)) {
+    throw badRequest('discipline is invalid');
   }
 
   let resolvedInstructorId = instructorId;
@@ -145,6 +149,9 @@ async function updateClass(user, id, updates) {
 
   for (const [key, col] of Object.entries(fieldMap)) {
     if (updates[key] !== undefined) {
+      if (key === 'discipline' && !isValidDiscipline(updates[key])) {
+        throw badRequest('discipline is invalid');
+      }
       sets.push(`${col} = $${i++}`);
       values.push(key === 'title' ? updates[key].trim() : updates[key]);
     }

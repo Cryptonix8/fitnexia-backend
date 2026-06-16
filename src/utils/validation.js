@@ -21,16 +21,7 @@ const LIMITS = {
 
 const VALID_ROLES = ['athlete', 'instructor', 'institution'];
 
-const DISCIPLINES = [
-  'Yoga',
-  'Tennis',
-  'Padel',
-  'CrossFit',
-  'HIIT',
-  'Pilates',
-  'Boxing',
-  'Running',
-];
+const { DISCIPLINES } = require('../config/disciplines');
 
 function trim(value) {
   return typeof value === 'string' ? value.trim() : value;

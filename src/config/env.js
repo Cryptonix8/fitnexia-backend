@@ -20,7 +20,7 @@ module.exports = {
   jwtAccessExpiresIn: Number(process.env.JWT_ACCESS_EXPIRES_IN || 3600),
   frontendUrl: process.env.FRONTEND_URL || '*',
   isDev: process.env.NODE_ENV !== 'production',
-  googleClientIds: (process.env.GOOGLE_CLIENT_IDS || process.env.GOOGLE_CLIENT_ID || '')
+  googleClientIds: (process.env.GOOGLE_CLIENT_IDS || process.env.GOOGLE_WEB_CLIENT_ID || '')
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean),
