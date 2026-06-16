@@ -106,8 +106,8 @@ async function listPayouts(user, queryParams = {}) {
     return {
       id: row.id,
       classTitle: row.class_title,
-      amount: { amount: net, currency: row.price_currency || 'USD' },
-      gross: { amount: gross, currency: row.price_currency || 'USD' },
+      amount: { amount: net, currency: row.price_currency || 'UYU' },
+      gross: { amount: gross, currency: row.price_currency || 'UYU' },
       status: row.status,
       createdAt: row.created_at.toISOString(),
     };
@@ -130,7 +130,7 @@ async function getSummary(user, period = 'month') {
   const { rows } = await query(
     `SELECT
        COALESCE(SUM(b.price_cents), 0)::int AS gross,
-       COALESCE(MAX(b.price_currency), 'USD') AS currency
+       COALESCE(MAX(b.price_currency), 'UYU') AS currency
      ${baseFilter}
        AND b.created_at >= $${fromIdx}
        AND b.created_at <= $${toIdx}`,
@@ -179,7 +179,7 @@ async function exportCsv(user, queryParams = {}) {
     const net = Math.round(gross * (1 - commissionRate));
     const date = row.created_at.toISOString().slice(0, 10);
     const title = `"${String(row.class_title).replace(/"/g, '""')}"`;
-    lines.push(`${date},${title},${row.status},${gross},${net},${row.price_currency || 'USD'}`);
+    lines.push(`${date},${title},${row.status},${gross},${net},${row.price_currency || 'UYU'}`);
   }
 
   return lines.join('\n');

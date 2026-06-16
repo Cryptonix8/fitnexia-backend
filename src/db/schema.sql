@@ -318,7 +318,7 @@ CREATE TABLE IF NOT EXISTS payments (
   preference_id         TEXT,
   status                payment_status NOT NULL DEFAULT 'pending',
   amount_cents          INTEGER NOT NULL,
-  currency              VARCHAR(3) NOT NULL DEFAULT 'USD',
+  currency              VARCHAR(3) NOT NULL DEFAULT 'UYU',
   checkout_url          TEXT,
   seller_collector_id   TEXT,
   seller_type           TEXT,

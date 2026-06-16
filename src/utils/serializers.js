@@ -10,7 +10,7 @@ async function getBookingCount(classId) {
 }
 
 function serializeMoney(cents, currency) {
-  return { amount: cents, currency: currency || 'USD' };
+  return { amount: cents, currency: currency || 'UYU' };
 }
 
 function serializeInstructor(row) {

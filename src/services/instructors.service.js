@@ -54,7 +54,7 @@ async function updateInstructorMe(userId, updates) {
     if (key === 'hourlyRate') {
       if (validated.hourlyRate) {
         sets.push(`hourly_rate_cents = $${i++}`, `hourly_rate_currency = $${i++}`);
-        values.push(validated.hourlyRate.amount, validated.hourlyRate.currency || 'USD');
+        values.push(validated.hourlyRate.amount, validated.hourlyRate.currency || 'UYU');
       } else {
         sets.push(`hourly_rate_cents = NULL`, `hourly_rate_currency = NULL`);
       }
