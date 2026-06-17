@@ -228,7 +228,7 @@ function validateRegister(body) {
     email: trim(email).toLowerCase(),
     password,
     role,
-    firstName: role === 'institution' ? trim(institutionName) : trim(firstName),
+    firstName: role === 'institution' ? '' : trim(firstName),
     lastName: role === 'institution' ? '' : trim(lastName),
     favoriteSports: favoriteSports ?? [],
     disciplines: disciplines ?? [],
