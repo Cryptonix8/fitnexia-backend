@@ -24,6 +24,7 @@ function getAppConfig() {
       subscriptionPaymentModels: true,
       waitlist: false,
       loyaltyCredits: false,
+      clubMemberships: true,
     },
     currency: defaultCurrency,
   };

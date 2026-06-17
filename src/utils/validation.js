@@ -370,6 +370,151 @@ function validateResetPassword(body) {
   return { token: token.trim(), password };
 }
 
+const VALID_BILLING_FREQUENCIES = ['monthly', 'quarterly', 'annual'];
+const VALID_PLAN_TYPES = ['individual', 'family'];
+
+function validateMembershipPlan(body, { partial = false } = {}) {
+  const { name, description, priceCents, priceCurrency, billingFrequency, planType, maxMembers, active } =
+    body ?? {};
+
+  const errors = collectErrors([
+    () => {
+      if (name === undefined && partial) return null;
+      if (!isNonEmptyString(name) || name.trim().length < 2 || name.trim().length > 100) {
+        return { field: 'name', message: 'Plan name must be 2–100 characters' };
+      }
+      return null;
+    },
+    () => validateOptionalText(description, 'description', LIMITS.description),
+    () => {
+      if (priceCents === undefined && partial) return null;
+      if (!Number.isInteger(priceCents) || priceCents < 0) {
+        return { field: 'priceCents', message: 'priceCents must be a non-negative integer' };
+      }
+      return null;
+    },
+    () => {
+      if (billingFrequency === undefined && partial) return null;
+      if (!VALID_BILLING_FREQUENCIES.includes(billingFrequency)) {
+        return {
+          field: 'billingFrequency',
+          message: `billingFrequency must be one of: ${VALID_BILLING_FREQUENCIES.join(', ')}`,
+        };
+      }
+      return null;
+    },
+    () => {
+      if (planType === undefined) return null;
+      if (!VALID_PLAN_TYPES.includes(planType)) {
+        return { field: 'planType', message: `planType must be one of: ${VALID_PLAN_TYPES.join(', ')}` };
+      }
+      return null;
+    },
+    () => {
+      if (maxMembers === undefined || maxMembers === null) return null;
+      if (!Number.isInteger(maxMembers) || maxMembers < 1) {
+        return { field: 'maxMembers', message: 'maxMembers must be a positive integer' };
+      }
+      return null;
+    },
+  ]);
+
+  if (!partial && !Object.keys(body ?? {}).length) {
+    throw badRequest('No valid fields provided');
+  }
+
+  failIfErrors(errors.filter(Boolean));
+
+  const normalized = {};
+  if (name !== undefined) normalized.name = trim(name);
+  if (description !== undefined) normalized.description = trim(description) || '';
+  if (priceCents !== undefined) normalized.priceCents = priceCents;
+  if (priceCurrency !== undefined) normalized.priceCurrency = trim(priceCurrency).toUpperCase();
+  if (billingFrequency !== undefined) normalized.billingFrequency = billingFrequency;
+  if (planType !== undefined) normalized.planType = planType;
+  if (maxMembers !== undefined) normalized.maxMembers = maxMembers;
+  if (active !== undefined) normalized.active = Boolean(active);
+  return normalized;
+}
+
+function validateMembershipSettings(body) {
+  const { graceDays, dueReminderDays } = body ?? {};
+  const errors = collectErrors([
+    () => {
+      if (graceDays === undefined) return null;
+      if (!Number.isInteger(graceDays) || graceDays < 0 || graceDays > 90) {
+        return { field: 'graceDays', message: 'graceDays must be between 0 and 90' };
+      }
+      return null;
+    },
+    () => {
+      if (dueReminderDays === undefined) return null;
+      if (!Number.isInteger(dueReminderDays) || dueReminderDays < 1 || dueReminderDays > 30) {
+        return { field: 'dueReminderDays', message: 'dueReminderDays must be between 1 and 30' };
+      }
+      return null;
+    },
+  ]);
+  failIfErrors(errors.filter(Boolean));
+  const normalized = {};
+  if (graceDays !== undefined) normalized.graceDays = graceDays;
+  if (dueReminderDays !== undefined) normalized.dueReminderDays = dueReminderDays;
+  return normalized;
+}
+
+function validateMembershipInvite(body) {
+  const { planId, email, invitedName, invitedPhone, expiresInDays } = body ?? {};
+  const errors = collectErrors([
+    () => {
+      if (!planId || typeof planId !== 'string') {
+        return { field: 'planId', message: 'planId is required' };
+      }
+      return null;
+    },
+    () => {
+      if (!email) return null;
+      return validateEmailField(email);
+    },
+    () => validateOptionalText(invitedName, 'invitedName', 100),
+    () => validateOptionalText(invitedPhone, 'invitedPhone', 30),
+  ]);
+  failIfErrors(errors.filter(Boolean));
+  return {
+    planId: trim(planId),
+    email: email ? trim(email).toLowerCase() : undefined,
+    invitedName: invitedName ? trim(invitedName) : undefined,
+    invitedPhone: invitedPhone ? trim(invitedPhone) : undefined,
+    expiresInDays: expiresInDays ?? 30,
+  };
+}
+
+function validateAddMember(body) {
+  const { planId, contactName, contactEmail, contactPhone, userId } = body ?? {};
+  const errors = collectErrors([
+    () => {
+      if (!planId) return { field: 'planId', message: 'planId is required' };
+      return null;
+    },
+    () => {
+      if (!contactName && !contactEmail && !userId) {
+        return { field: 'contact', message: 'contactName, contactEmail, or userId is required' };
+      }
+      return null;
+    },
+    () => (contactEmail ? validateEmailField(contactEmail) : null),
+    () => validateOptionalText(contactName, 'contactName', 100),
+    () => validateOptionalText(contactPhone, 'contactPhone', 30),
+  ]);
+  failIfErrors(errors.filter(Boolean));
+  return {
+    planId: trim(planId),
+    contactName: contactName ? trim(contactName) : undefined,
+    contactEmail: contactEmail ? trim(contactEmail).toLowerCase() : undefined,
+    contactPhone: contactPhone ? trim(contactPhone) : undefined,
+    userId: userId || undefined,
+  };
+}
+
 module.exports = {
   LIMITS,
   DISCIPLINES,
@@ -382,4 +527,8 @@ module.exports = {
   validateUserAccountUpdate,
   validateEmailField,
   validatePasswordField,
+  validateMembershipPlan,
+  validateMembershipSettings,
+  validateMembershipInvite,
+  validateAddMember,
 };

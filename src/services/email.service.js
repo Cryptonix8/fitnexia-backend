@@ -386,11 +386,122 @@ function renderPasswordResetOpenPage({
 </html>`;
 }
 
+async function sendMembershipInviteEmail({ to, institutionName, planName, inviteCode }) {
+  const subject = `${institutionName} te invitó a unirte como socio`;
+  const text = [
+    'Hola,',
+    '',
+    `${institutionName} te invitó a unirte con el plan "${planName}".`,
+    '',
+    `Código de invitación: ${inviteCode}`,
+    '',
+    'Abrí la app Fitnexia, andá a Membresía del club e ingresá el código.',
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola,</p>
+    <p><strong>${escapeHtml(institutionName)}</strong> te invitó a unirte con el plan <strong>${escapeHtml(planName)}</strong>.</p>
+    <p>Código de invitación: <strong>${escapeHtml(inviteCode)}</strong></p>
+    <p>Abrí la app Fitnexia, andá a Membresía del club e ingresá el código.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
+async function sendMembershipDueReminderEmail({ to, institutionName, planName, dueDate }) {
+  const when = dueDate
+    ? new Date(dueDate).toLocaleDateString('es-UY', { dateStyle: 'long' })
+    : 'próximamente';
+  const subject = `Recordatorio: cuota de ${institutionName}`;
+  const text = [
+    'Hola,',
+    '',
+    `Tu cuota del plan "${planName}" en ${institutionName} vence el ${when}.`,
+    '',
+    'Revisá tu estado de cuenta en la app Fitnexia.',
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola,</p>
+    <p>Tu cuota del plan <strong>${escapeHtml(planName)}</strong> en <strong>${escapeHtml(institutionName)}</strong> vence el <strong>${escapeHtml(when)}</strong>.</p>
+    <p>Revisá tu estado de cuenta en la app Fitnexia.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
+async function sendMembershipOverdueEmail({ to, institutionName }) {
+  const subject = `Cuota vencida — ${institutionName}`;
+  const text = [
+    'Hola,',
+    '',
+    `Tu cuota en ${institutionName} está vencida. Regularizá tu pago desde la app Fitnexia.`,
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola,</p>
+    <p>Tu cuota en <strong>${escapeHtml(institutionName)}</strong> está vencida. Regularizá tu pago desde la app Fitnexia.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
+async function sendMembershipPaymentReceiptEmail({
+  to,
+  institutionName,
+  planName,
+  amountCents,
+  currency,
+}) {
+  const amount = (amountCents / 100).toFixed(2);
+  const subject = `Recibo de cuota — ${institutionName}`;
+  const text = [
+    'Hola,',
+    '',
+    `Recibimos tu pago de ${amount} ${currency} por el plan "${planName}" en ${institutionName}.`,
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola,</p>
+    <p>Recibimos tu pago de <strong>${amount} ${escapeHtml(currency)}</strong> por el plan <strong>${escapeHtml(planName)}</strong> en <strong>${escapeHtml(institutionName)}</strong>.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
+async function sendMembershipArrearsAlertEmail({ to, institutionName, overdueCount }) {
+  const subject = `${overdueCount} socio(s) en mora — ${institutionName}`;
+  const text = [
+    'Hola,',
+    '',
+    `Tenés ${overdueCount} socio(s) con cuotas vencidas en ${institutionName}.`,
+    'Revisá el registro de socios en la app Fitnexia.',
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola,</p>
+    <p>Tenés <strong>${overdueCount}</strong> socio(s) con cuotas vencidas en <strong>${escapeHtml(institutionName)}</strong>.</p>
+    <p>Revisá el registro de socios en la app Fitnexia.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
 module.exports = {
   sendMail,
   sendInstructorInviteEmail,
   sendPaymentReceiptEmails,
   sendPasswordResetEmail,
+  sendMembershipInviteEmail,
+  sendMembershipDueReminderEmail,
+  sendMembershipOverdueEmail,
+  sendMembershipPaymentReceiptEmail,
+  sendMembershipArrearsAlertEmail,
   renderPasswordResetOpenPage,
   buildPasswordResetAppLinks,
   isEmailEnabled: () => emailEnabled,

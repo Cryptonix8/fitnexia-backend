@@ -458,8 +458,27 @@ async function processMercadoPagoPaymentId(providerPaymentId) {
   }
 
   const status = mpPayment.status;
-  const isPass = String(externalReference).startsWith('pass:');
-  const passId = isPass ? String(externalReference).slice(5) : null;
+  const ref = String(externalReference);
+
+  if (ref.startsWith('msub_pay:')) {
+    const membershipPaymentId = ref.slice('msub_pay:'.length);
+    const membershipsService = require('./memberships.service');
+    if (status === 'approved') {
+      await membershipsService.confirmMembershipPayment(membershipPaymentId, String(mpPayment.id));
+      return { processed: true, membershipPaymentId, status: 'approved' };
+    }
+    if (['rejected', 'cancelled'].includes(status)) {
+      await query(
+        `UPDATE membership_payments SET status = 'rejected', updated_at = now() WHERE id = $1`,
+        [membershipPaymentId],
+      );
+      return { processed: true, membershipPaymentId, status: 'rejected' };
+    }
+    return { processed: true, membershipPaymentId, status: 'pending' };
+  }
+
+  const isPass = ref.startsWith('pass:');
+  const passId = isPass ? ref.slice(5) : null;
   const bookingId = isPass ? null : externalReference;
 
   if (status === 'approved') {

@@ -13,6 +13,7 @@ const mediaRoutes = require('./media.routes');
 const payoutsRoutes = require('./payouts.routes');
 const paymentsRoutes = require('./payments.routes');
 const passesRoutes = require('./passes.routes');
+const membershipsRoutes = require('./memberships.routes');
 const webhooksRoutes = require('./webhooks.routes');
 const adminRoutes = require('./admin.routes');
 const reviewsService = require('../services/reviews.service');
@@ -39,6 +40,7 @@ router.use('/media', mediaRoutes);
 router.use('/payouts', payoutsRoutes);
 router.use('/payments', paymentsRoutes);
 router.use('/passes', passesRoutes);
+router.use('/memberships', membershipsRoutes);
 router.use('/webhooks', webhooksRoutes);
 router.use('/admin', adminRoutes);
 

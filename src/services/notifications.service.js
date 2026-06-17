@@ -10,10 +10,17 @@ const PREF_BY_TYPE = {
   class_reminder_1h: 'classReminders',
   instructor_invite: null,
   review_invite: 'reviewInvites',
+  membership_invite: null,
+  membership_due_reminder: 'paymentUpdates',
+  membership_payment_confirmed: 'paymentUpdates',
+  membership_payment_failed: 'paymentUpdates',
+  membership_overdue: 'paymentUpdates',
+  club_arrears_alert: 'paymentUpdates',
 };
 
-function buildDedupeKey(userId, type, { bookingId, inviteId } = {}) {
-  return [userId, type, bookingId || '-', inviteId || '-'].join(':');
+function buildDedupeKey(userId, type, { bookingId, inviteId, memberId, dueDate } = {}) {
+  const dueKey = dueDate ? new Date(dueDate).toISOString().slice(0, 10) : '-';
+  return [userId, type, bookingId || '-', inviteId || '-', memberId || '-', dueKey].join(':');
 }
 
 function formatClassWhen(startAt) {
@@ -55,12 +62,17 @@ function shouldSend(type, prefs) {
   return prefs[prefKey] === true;
 }
 
-async function claimDelivery(userId, type, dedupeKey, { bookingId = null, inviteId = null } = {}) {
+async function claimDelivery(
+  userId,
+  type,
+  dedupeKey,
+  { bookingId = null, inviteId = null, memberId = null } = {},
+) {
   try {
     await query(
       `INSERT INTO notification_deliveries (user_id, booking_id, invite_id, type, channel, dedupe_key)
        VALUES ($1, $2, $3, $4, 'push', $5)`,
-      [userId, bookingId, inviteId, type, dedupeKey],
+      [userId, bookingId, inviteId || memberId, type, dedupeKey],
     );
     return true;
   } catch (err) {
@@ -77,6 +89,8 @@ async function dispatchPush({
   data = {},
   bookingId = null,
   inviteId = null,
+  memberId = null,
+  dueDate = null,
   skipDedupe = false,
 }) {
   try {
@@ -85,9 +99,13 @@ async function dispatchPush({
       return { sent: false, reason: 'pref_disabled' };
     }
 
-    const dedupeKey = buildDedupeKey(userId, type, { bookingId, inviteId });
+    const dedupeKey = buildDedupeKey(userId, type, { bookingId, inviteId, memberId, dueDate });
     if (!skipDedupe) {
-      const claimed = await claimDelivery(userId, type, dedupeKey, { bookingId, inviteId });
+      const claimed = await claimDelivery(userId, type, dedupeKey, {
+        bookingId,
+        inviteId,
+        memberId,
+      });
       if (!claimed) return { sent: false, reason: 'duplicate' };
     }
 
@@ -263,6 +281,78 @@ async function findUserIdByEmail(email) {
   return rows[0]?.id || null;
 }
 
+async function notifyMembershipInvite({ email, institutionName, inviteCode }) {
+  const userId = await findUserIdByEmail(email);
+  if (!userId) return { sent: false, reason: 'user_not_registered' };
+  return dispatchPush({
+    userId,
+    type: 'membership_invite',
+    title: 'Invitación de club',
+    body: `${institutionName} te invitó como socio. Código: ${inviteCode}`,
+    data: { screen: '/membership/join', inviteCode },
+    skipDedupe: true,
+  });
+}
+
+async function notifyMembershipDueReminder({ userId, memberId, institutionName, dueDate }) {
+  const when = dueDate
+    ? new Date(dueDate).toLocaleDateString('es-UY', { dateStyle: 'medium' })
+    : 'pronto';
+  return dispatchPush({
+    userId,
+    type: 'membership_due_reminder',
+    title: 'Cuota próxima a vencer',
+    body: `${institutionName} — vence el ${when}`,
+    memberId,
+    dueDate,
+    data: { memberId, screen: `/membership/${memberId}` },
+  });
+}
+
+async function notifyMembershipPaymentConfirmed({ userId, memberId, institutionName }) {
+  return dispatchPush({
+    userId,
+    type: 'membership_payment_confirmed',
+    title: 'Cuota confirmada',
+    body: `Pago registrado en ${institutionName}`,
+    memberId,
+    data: { memberId, screen: `/membership/${memberId}` },
+  });
+}
+
+async function notifyMembershipPaymentFailed({ userId, memberId, institutionName }) {
+  return dispatchPush({
+    userId,
+    type: 'membership_payment_failed',
+    title: 'Problema con tu cuota',
+    body: `No pudimos cobrar la cuota en ${institutionName}. Regularizá desde la app.`,
+    memberId,
+    data: { memberId, screen: `/membership/${memberId}` },
+  });
+}
+
+async function notifyMembershipOverdue({ userId, memberId, institutionName }) {
+  return dispatchPush({
+    userId,
+    type: 'membership_overdue',
+    title: 'Cuota vencida',
+    body: `Tu membresía en ${institutionName} está en mora`,
+    memberId,
+    data: { memberId, screen: `/membership/${memberId}` },
+  });
+}
+
+async function notifyClubArrearsAlert({ userId, overdueCount, institutionName }) {
+  return dispatchPush({
+    userId,
+    type: 'club_arrears_alert',
+    title: 'Socios en mora',
+    body: `${overdueCount} socio(s) con cuota vencida en ${institutionName}`,
+    data: { screen: '/(gym)/(tabs)/members' },
+    skipDedupe: false,
+  });
+}
+
 module.exports = {
   dispatchPush,
   notifyPasswordReset,
@@ -271,6 +361,12 @@ module.exports = {
   notifyClassReminder,
   notifyInstructorInvite,
   notifyReviewInvite,
+  notifyMembershipInvite,
+  notifyMembershipDueReminder,
+  notifyMembershipPaymentConfirmed,
+  notifyMembershipPaymentFailed,
+  notifyMembershipOverdue,
+  notifyClubArrearsAlert,
   findUserIdByEmail,
   formatClassWhen,
 };

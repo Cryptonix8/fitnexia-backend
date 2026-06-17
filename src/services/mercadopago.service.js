@@ -48,6 +48,65 @@ function buildDeepLink(bookingId, status) {
   return `${appDeepLinkScheme}://booking/complete?bookingId=${bookingId}&status=${status}`;
 }
 
+function buildMembershipDeepLink(memberId, status) {
+  return `${appDeepLinkScheme}://membership/complete?memberId=${memberId}&status=${status}`;
+}
+
+function frequencyToMercadoPago(frequency) {
+  if (frequency === 'monthly') return { frequency: 1, frequency_type: 'months' };
+  if (frequency === 'quarterly') return { frequency: 3, frequency_type: 'months' };
+  if (frequency === 'annual') return { frequency: 1, frequency_type: 'years' };
+  return { frequency: 1, frequency_type: 'months' };
+}
+
+async function createPreapproval({
+  externalReference,
+  reason,
+  amountCents,
+  currency,
+  payerEmail,
+  billingFrequency,
+  returnMemberId,
+  backUrl,
+}) {
+  const unitPrice = amountCents / 100;
+  const notificationUrl = `${apiPublicUrl}/v1/webhooks/mercadopago`;
+  const freq = frequencyToMercadoPago(billingFrequency);
+
+  const body = {
+    reason: reason.slice(0, 256),
+    external_reference: externalReference,
+    payer_email: payerEmail,
+    auto_recurring: {
+      frequency: freq.frequency,
+      frequency_type: freq.frequency_type,
+      transaction_amount: unitPrice,
+      currency_id: resolveMercadoPagoCurrency(currency),
+    },
+    back_url: backUrl || buildMembershipDeepLink(returnMemberId, 'success'),
+    status: 'pending',
+  };
+
+  const preapproval = await mercadoPagoRequest('/preapproval', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+  return {
+    preapprovalId: preapproval.id,
+    authorizationUrl:
+      preapproval.init_point || preapproval.sandbox_init_point || preapproval.back_url,
+  };
+}
+
+async function fetchMercadoPagoPreapproval(preapprovalId) {
+  return mercadoPagoRequest(`/preapproval/${preapprovalId}`);
+}
+
+function buildMockMembershipAuthorizeUrl(subscriptionId) {
+  return `${apiPublicUrl}/v1/memberships/mock-authorize/${subscriptionId}`;
+}
+
 async function createCheckoutPreference({
   externalReference,
   title,
@@ -131,10 +190,14 @@ module.exports = {
   isMercadoPagoConfigured,
   useMockPayments,
   createCheckoutPreference,
+  createPreapproval,
   fetchMercadoPagoPayment,
+  fetchMercadoPagoPreapproval,
   searchMercadoPagoPaymentsByReference,
   refundMercadoPagoPayment,
   buildMockCheckoutUrl,
+  buildMockMembershipAuthorizeUrl,
   buildDeepLink,
+  buildMembershipDeepLink,
   resolveMercadoPagoCurrency,
 };
