@@ -1,4 +1,6 @@
 const { query } = require('../db/pool');
+const { normalizeDiscipline, normalizeDisciplineList } = require('../config/disciplines');
+const { normalizeLocationLabel } = require('../config/locations');
 
 async function getBookingCount(classId) {
   const { rows } = await query(
@@ -38,7 +40,7 @@ async function serializeClassRow(row, bookedCount) {
   const item = {
     id: row.id,
     title: row.title,
-    discipline: row.discipline,
+    discipline: normalizeDiscipline(row.discipline),
     modality: row.modality,
     startAt: row.start_at.toISOString(),
     durationMinutes: row.duration_minutes,
@@ -68,7 +70,7 @@ async function serializeClassRow(row, bookedCount) {
     item.location = {
       lat: row.location_lat,
       lng: row.location_lng,
-      label: row.location_label || '',
+      label: normalizeLocationLabel(row.location_label || ''),
     };
   }
 
@@ -93,7 +95,7 @@ function serializeAthleteProfile(row) {
     lastName: row.last_name,
     photoUrl: row.photo_url || undefined,
     favoriteSports: row.favorite_sports || [],
-    locale: row.locale || 'en',
+    locale: row.locale || 'es',
   };
 }
 
@@ -104,7 +106,7 @@ async function serializeInstructorFull(row, certifications = [], schedule = []) 
     displayName: row.display_name,
     photoUrl: row.photo_url || undefined,
     bio: row.bio || '',
-    disciplines: row.disciplines || [],
+    disciplines: normalizeDisciplineList(row.disciplines || []),
     certifications,
     verified: row.verified,
     availableNow: row.available_now,
