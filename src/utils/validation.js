@@ -208,8 +208,8 @@ function validateRegister(body) {
       }
       return null;
     },
-    () => validateNameField(firstName, 'firstName'),
-    () => validateNameField(lastName, 'lastName'),
+    () => (role === 'institution' ? null : validateNameField(firstName, 'firstName')),
+    () => (role === 'institution' ? null : validateNameField(lastName, 'lastName')),
     () => validateOptionalUrl(photoUrl, 'photoUrl'),
     () => validateDisciplineList(favoriteSports, 'favoriteSports'),
     () => validateDisciplineList(disciplines, 'disciplines'),
@@ -228,8 +228,8 @@ function validateRegister(body) {
     email: trim(email).toLowerCase(),
     password,
     role,
-    firstName: trim(firstName),
-    lastName: trim(lastName),
+    firstName: role === 'institution' ? trim(institutionName) : trim(firstName),
+    lastName: role === 'institution' ? '' : trim(lastName),
     favoriteSports: favoriteSports ?? [],
     disciplines: disciplines ?? [],
     institutionName: trim(institutionName),
