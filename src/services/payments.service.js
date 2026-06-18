@@ -308,7 +308,7 @@ async function notifyAfterPaymentConfirmed(bookingId) {
     classStartAt: row.start_at,
     grossCents: row.price_cents,
     currency: row.price_currency,
-    commissionPercent: plan?.commissionPercent ?? 15,
+    commissionPercent: plan?.commissionPercent ?? 10,
     bookingId,
   });
 }

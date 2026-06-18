@@ -462,7 +462,7 @@ Or authorization code:
 
 | Plan | Monthly fee | Commission |
 |------|-------------|------------|
-| `basic` | Free | 15% |
+| `basic` | Free | 10% |
 | `pro` | $29 | 8% |
 | `institutional` | $99 | 5% |
 
