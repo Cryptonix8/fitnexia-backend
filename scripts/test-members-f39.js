@@ -142,6 +142,32 @@ async function run() {
       validationOk = err.code === 'VALIDATION_ERROR';
     }
     assert(validationOk, 'updateMember rejects empty body');
+
+    console.log('Link member by email when athlete opens memberships');
+    const linkEmail = `f39-link-${Date.now()}@fitnexia.test`;
+    const invited = await membershipsService.addMember(userId, {
+      planId: plan.id,
+      contactName: 'Email Link Test',
+      contactEmail: linkEmail,
+    });
+    memberIds.push(invited.id);
+    assert(!invited.userId, 'unregistered email creates invited member without userId');
+
+    const linkPasswordHash = await bcrypt.hash('TestPass123!', 10);
+    const { rows: linkAthletes } = await pool.query(
+      `INSERT INTO users (email, password_hash, role, email_verified)
+       VALUES ($1, $2, 'athlete', true) RETURNING id`,
+      [linkEmail, linkPasswordHash],
+    );
+    const linkAthleteId = linkAthletes[0].id;
+    const linked = await membershipsService.getMyMemberships(linkAthleteId);
+    assert(linked.some((m) => m.id === invited.id), 'getMyMemberships links invited member by email');
+    assert(linked.find((m) => m.id === invited.id)?.status === 'pending_authorization', 'linked member is pending_authorization');
+
+    await pool.query(`DELETE FROM membership_subscriptions WHERE club_member_id = $1`, [invited.id]);
+    await pool.query(`DELETE FROM club_members WHERE id = $1`, [invited.id]);
+    memberIds.pop();
+    await pool.query(`DELETE FROM users WHERE id = $1`, [linkAthleteId]);
   } finally {
     await cleanup(userId, institutionId, memberIds, planIds);
   }

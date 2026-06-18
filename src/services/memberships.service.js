@@ -158,6 +158,61 @@ async function getPlanForInstitution(institutionId, planId) {
   return rows[0];
 }
 
+async function linkMemberToUser(memberId, userId) {
+  const { rows } = await query(`SELECT * FROM club_members WHERE id = $1`, [memberId]);
+  if (!rows.length) return;
+  const member = rows[0];
+  if (member.user_id && member.user_id !== userId) return;
+
+  const nextStatus = member.status === 'invited' ? 'pending_authorization' : member.status;
+
+  await query(
+    `UPDATE club_members
+     SET user_id = $1,
+         status = $2,
+         joined_at = COALESCE(joined_at, now()),
+         updated_at = now()
+     WHERE id = $3`,
+    [userId, nextStatus, memberId],
+  );
+
+  const { rows: subs } = await query(
+    `SELECT id FROM membership_subscriptions WHERE club_member_id = $1`,
+    [memberId],
+  );
+  if (!subs.length) {
+    const subStatus =
+      nextStatus === 'active'
+        ? 'active'
+        : ['pending_payment', 'overdue'].includes(nextStatus)
+          ? 'past_due'
+          : 'pending_authorization';
+    await query(
+      `INSERT INTO membership_subscriptions (club_member_id, institution_id, plan_id, status)
+       VALUES ($1, $2, $3, $4)`,
+      [memberId, member.institution_id, member.plan_id, subStatus],
+    );
+  }
+}
+
+async function syncMemberLinksForUser(userId) {
+  const { rows: userRows } = await query(`SELECT email FROM users WHERE id = $1`, [userId]);
+  if (!userRows.length) return;
+
+  const { rows: pending } = await query(
+    `SELECT id FROM club_members
+     WHERE left_at IS NULL
+       AND user_id IS NULL
+       AND contact_email IS NOT NULL
+       AND LOWER(contact_email) = LOWER($1)`,
+    [userRows[0].email],
+  );
+
+  for (const row of pending) {
+    await linkMemberToUser(row.id, userId);
+  }
+}
+
 // ─── Plans (F-40) ───────────────────────────────────────────────────────────
 
 async function listPlans(userId) {
@@ -492,9 +547,10 @@ async function addMember(userId, body) {
 
   let memberUserId = validated.userId;
   if (!memberUserId && validated.contactEmail) {
-    const { rows } = await query(`SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL`, [
-      validated.contactEmail,
-    ]);
+    const { rows } = await query(
+      `SELECT id FROM users WHERE LOWER(email) = $1 AND deleted_at IS NULL`,
+      [validated.contactEmail],
+    );
     memberUserId = rows[0]?.id;
   }
 
@@ -577,7 +633,7 @@ async function updateMember(userId, memberId, body) {
 
   if (validated.contactEmail) {
     const { rows: linkedUser } = await query(
-      `SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL`,
+      `SELECT id FROM users WHERE LOWER(email) = $1 AND deleted_at IS NULL`,
       [validated.contactEmail],
     );
     if (linkedUser.length) {
@@ -632,14 +688,11 @@ async function updateMember(userId, memberId, body) {
 
   if (validated.contactEmail) {
     const { rows: users } = await query(
-      `SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL`,
+      `SELECT id FROM users WHERE LOWER(email) = $1 AND deleted_at IS NULL`,
       [validated.contactEmail],
     );
-    if (users.length && !rows[0].user_id) {
-      await query(`UPDATE club_members SET user_id = $1, updated_at = now() WHERE id = $2`, [
-        users[0].id,
-        memberId,
-      ]);
+    if (users.length) {
+      await linkMemberToUser(memberId, users[0].id);
     }
   }
 
@@ -768,6 +821,7 @@ async function acceptInvite(user, code) {
 }
 
 async function loadMemberForUser(userId, memberId) {
+  await syncMemberLinksForUser(userId);
   const { rows } = await query(
     `SELECT cm.*, mp.name AS plan_name, mp.price_cents, mp.price_currency,
             mp.billing_frequency, i.name AS institution_name, i.user_id AS institution_user_id,
@@ -777,7 +831,11 @@ async function loadMemberForUser(userId, memberId) {
      JOIN membership_plans mp ON mp.id = cm.plan_id
      JOIN institutions i ON i.id = cm.institution_id
      LEFT JOIN membership_subscriptions ms ON ms.club_member_id = cm.id
-     WHERE cm.id = $1 AND cm.user_id = $2 AND cm.left_at IS NULL`,
+     WHERE cm.id = $1 AND cm.left_at IS NULL
+       AND (
+         cm.user_id = $2
+         OR LOWER(cm.contact_email) = (SELECT LOWER(email) FROM users WHERE id = $2)
+       )`,
     [memberId, userId],
   );
   if (!rows.length) throw notFound('Membership not found');
@@ -941,6 +999,7 @@ async function activateSubscription(subscriptionId, { preapprovalId, providerPay
 // ─── Statement & debt payment (F-42) ──────────────────────────────────────────
 
 async function getMyMemberships(userId) {
+  await syncMemberLinksForUser(userId);
   const { rows } = await query(
     `SELECT cm.*, mp.name AS plan_name, mp.billing_frequency,
             i.name AS institution_name, i.logo_url,
@@ -949,7 +1008,11 @@ async function getMyMemberships(userId) {
      JOIN membership_plans mp ON mp.id = cm.plan_id
      JOIN institutions i ON i.id = cm.institution_id
      LEFT JOIN membership_subscriptions ms ON ms.club_member_id = cm.id
-     WHERE cm.user_id = $1 AND cm.left_at IS NULL
+     WHERE cm.left_at IS NULL
+       AND (
+         cm.user_id = $1
+         OR LOWER(cm.contact_email) = (SELECT LOWER(email) FROM users WHERE id = $1)
+       )
      ORDER BY cm.created_at DESC`,
     [userId],
   );
