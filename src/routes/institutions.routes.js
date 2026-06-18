@@ -228,6 +228,26 @@ router.post(
   }),
 );
 
+router.get(
+  '/me/members/:id',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const member = await membershipsService.getMember(req.user.id, req.params.id);
+    res.json(member);
+  }),
+);
+
+router.patch(
+  '/me/members/:id',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const member = await membershipsService.updateMember(req.user.id, req.params.id, req.body);
+    res.json(member);
+  }),
+);
+
 router.delete(
   '/me/members/:id',
   requireAuth,

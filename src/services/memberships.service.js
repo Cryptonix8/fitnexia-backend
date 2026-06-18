@@ -8,6 +8,7 @@ const {
   validateMembershipSettings,
   validateMembershipInvite,
   validateAddMember,
+  validateUpdateMember,
 } = require('../utils/validation');
 const institutionsService = require('./institutions.service');
 const {
@@ -520,6 +521,114 @@ async function addMember(userId, body) {
   }
 
   return serializeMember(member, { planName: plan.name, institutionName: institution.name });
+}
+
+async function getMemberForInstitution(institutionId, memberId) {
+  const { rows } = await query(
+    `SELECT cm.*, mp.name AS plan_name, ms.next_billing_at, ms.status AS subscription_status
+     FROM club_members cm
+     JOIN membership_plans mp ON mp.id = cm.plan_id
+     LEFT JOIN membership_subscriptions ms ON ms.club_member_id = cm.id
+     WHERE cm.id = $1 AND cm.institution_id = $2`,
+    [memberId, institutionId],
+  );
+  if (!rows.length) throw notFound('Member not found');
+  return rows[0];
+}
+
+async function getMember(userId, memberId) {
+  const institution = await institutionsService.getInstitutionByUserId(userId);
+  const row = await getMemberForInstitution(institution.id, memberId);
+  return serializeMember(row, {
+    planName: row.plan_name,
+    institutionName: institution.name,
+    nextBillingAt: row.next_billing_at?.toISOString(),
+    subscriptionStatus: row.subscription_status,
+  });
+}
+
+async function updateMember(userId, memberId, body) {
+  const validated = validateUpdateMember(body);
+  const institution = await institutionsService.getInstitutionByUserId(userId);
+  const member = await getMemberForInstitution(institution.id, memberId);
+
+  if (member.left_at) {
+    throw badRequest('Cannot update an inactive member');
+  }
+
+  if (validated.planId) {
+    await getPlanForInstitution(institution.id, validated.planId);
+  }
+
+  if (validated.contactEmail) {
+    const { rows: linkedUser } = await query(
+      `SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL`,
+      [validated.contactEmail],
+    );
+    if (linkedUser.length) {
+      const { rows: conflictMember } = await query(
+        `SELECT id FROM club_members
+         WHERE institution_id = $1 AND user_id = $2 AND left_at IS NULL AND id <> $3`,
+        [institution.id, linkedUser[0].id, memberId],
+      );
+      if (conflictMember.length) {
+        throw conflict('ALREADY_MEMBER', 'Another member with this email is already registered');
+      }
+    }
+  }
+
+  const fieldMap = {
+    planId: 'plan_id',
+    contactName: 'contact_name',
+    contactEmail: 'contact_email',
+    contactPhone: 'contact_phone',
+  };
+
+  const sets = [];
+  const values = [];
+  let i = 1;
+  for (const [key, col] of Object.entries(fieldMap)) {
+    if (validated[key] !== undefined) {
+      sets.push(`${col} = $${i++}`);
+      values.push(validated[key]);
+    }
+  }
+
+  if (!sets.length) throw badRequest('No valid fields to update');
+
+  sets.push('updated_at = now()');
+  values.push(memberId, institution.id);
+
+  const { rows } = await query(
+    `UPDATE club_members SET ${sets.join(', ')}
+     WHERE id = $${i++} AND institution_id = $${i}
+     RETURNING *`,
+    values,
+  );
+
+  if (validated.planId) {
+    await query(
+      `UPDATE membership_subscriptions
+       SET plan_id = $1, updated_at = now()
+       WHERE club_member_id = $2`,
+      [validated.planId, memberId],
+    );
+  }
+
+  if (validated.contactEmail) {
+    const { rows: users } = await query(
+      `SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL`,
+      [validated.contactEmail],
+    );
+    if (users.length && !rows[0].user_id) {
+      await query(`UPDATE club_members SET user_id = $1, updated_at = now() WHERE id = $2`, [
+        users[0].id,
+        memberId,
+      ]);
+    }
+  }
+
+  return getMember(userId, memberId);
 }
 
 async function removeMember(userId, memberId) {
@@ -1179,6 +1288,8 @@ module.exports = {
   getInviteByCode,
   listMembers,
   addMember,
+  getMember,
+  updateMember,
   removeMember,
   getMembersSummary,
   acceptInvite,

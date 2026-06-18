@@ -10,6 +10,7 @@
     "db:migrate-passes": "node scripts/migrate-athlete-passes.js",
     "db:migrate-marketplace": "node scripts/migrate-mp-marketplace.js",
     "db:migrate-disciplines": "node scripts/migrate-disciplines.js",
+    "test:members-f39": "node scripts/test-members-f39.js",
     "webhook:url": "node -e \"require('dotenv').config({path:require('path').resolve('.env')}); const u=(process.env.API_PUBLIC_URL||'http://localhost:'+(process.env.PORT||3001)).replace(/\\/$/,''); console.log(u+'/v1/webhooks/mercadopago')\""
   },
   "dependencies": {

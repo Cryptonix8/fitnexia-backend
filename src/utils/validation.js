@@ -515,6 +515,35 @@ function validateAddMember(body) {
   };
 }
 
+function validateUpdateMember(body) {
+  const { planId, contactName, contactEmail, contactPhone } = body ?? {};
+  const errors = collectErrors([
+    () =>
+      contactEmail !== undefined && contactEmail !== '' ? validateEmailField(contactEmail) : null,
+    () => validateOptionalText(contactName, 'contactName', 100),
+    () => validateOptionalText(contactPhone, 'contactPhone', 30),
+    () => {
+      if (planId !== undefined && (typeof planId !== 'string' || !planId.trim())) {
+        return { field: 'planId', message: 'planId must be a non-empty string' };
+      }
+      return null;
+    },
+  ]);
+
+  if (!Object.keys(body ?? {}).some((k) => body[k] !== undefined)) {
+    throw badRequest('No valid fields to update');
+  }
+
+  failIfErrors(errors.filter(Boolean));
+
+  const normalized = {};
+  if (planId !== undefined) normalized.planId = trim(planId);
+  if (contactName !== undefined) normalized.contactName = trim(contactName) || null;
+  if (contactEmail !== undefined) normalized.contactEmail = trim(contactEmail).toLowerCase() || null;
+  if (contactPhone !== undefined) normalized.contactPhone = trim(contactPhone) || null;
+  return normalized;
+}
+
 module.exports = {
   LIMITS,
   DISCIPLINES,
@@ -531,4 +560,5 @@ module.exports = {
   validateMembershipSettings,
   validateMembershipInvite,
   validateAddMember,
+  validateUpdateMember,
 };
