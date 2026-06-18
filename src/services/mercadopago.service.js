@@ -108,7 +108,8 @@ function buildMembershipCheckoutBackUrl(memberId, status = 'success') {
 function frequencyToMercadoPago(frequency) {
   if (frequency === 'monthly') return { frequency: 1, frequency_type: 'months' };
   if (frequency === 'quarterly') return { frequency: 3, frequency_type: 'months' };
-  if (frequency === 'annual') return { frequency: 1, frequency_type: 'years' };
+  // MP preapproval only accepts frequency_type: days | months (not years).
+  if (frequency === 'annual') return { frequency: 12, frequency_type: 'months' };
   return { frequency: 1, frequency_type: 'months' };
 }
 
