@@ -23,6 +23,28 @@ function useMockPayments() {
   return !isMercadoPagoConfigured() && isDev;
 }
 
+function isTestMercadoPagoToken() {
+  return mercadopagoAccessToken.startsWith('TEST-');
+}
+
+/** Checkout preferences expose sandbox_init_point; preapproval often only returns production init_point. */
+function toMercadoPagoSandboxUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  if (/sandbox\.mercadopago/i.test(url)) return url;
+
+  return url.replace(
+    /https?:\/\/(?:www\.)?mercadopago(\.[a-z0-9.-]+)/gi,
+    (_match, domainSuffix) => `https://sandbox.mercadopago${domainSuffix}`,
+  );
+}
+
+function resolveMercadoPagoInitPoint(initPoint, sandboxInitPoint) {
+  if (isTestMercadoPagoToken()) {
+    return sandboxInitPoint || toMercadoPagoSandboxUrl(initPoint) || initPoint;
+  }
+  return initPoint || sandboxInitPoint;
+}
+
 async function mercadoPagoRequest(path, options = {}) {
   const res = await fetch(`https://api.mercadopago.com${path}`, {
     ...options,
@@ -111,12 +133,10 @@ async function createPreapproval({
 
   return {
     preapprovalId: preapproval.id,
-    authorizationUrl:
-      (mercadopagoAccessToken.startsWith('TEST-')
-        ? preapproval.sandbox_init_point
-        : null) ||
-      preapproval.init_point ||
+    authorizationUrl: resolveMercadoPagoInitPoint(
+      preapproval.init_point,
       preapproval.sandbox_init_point,
+    ),
   };
 }
 
@@ -173,12 +193,7 @@ async function createCheckoutPreference({
 
   return {
     preferenceId: preference.id,
-    checkoutUrl:
-      (mercadopagoAccessToken.startsWith('TEST-')
-        ? preference.sandbox_init_point
-        : null) ||
-      preference.init_point ||
-      preference.sandbox_init_point,
+    checkoutUrl: resolveMercadoPagoInitPoint(preference.init_point, preference.sandbox_init_point),
   };
 }
 
@@ -222,4 +237,6 @@ module.exports = {
   buildMembershipDeepLink,
   buildMembershipAuthorizeBackUrl,
   resolveMercadoPagoCurrency,
+  resolveMercadoPagoInitPoint,
+  toMercadoPagoSandboxUrl,
 };
