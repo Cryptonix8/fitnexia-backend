@@ -21,6 +21,7 @@ tags:
   - name: Users
   - name: Instructors
   - name: Institutions
+  - name: Memberships
   - name: Classes
   - name: Bookings
   - name: Payments
@@ -476,6 +477,366 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MetricsSummary'
+
+  /institutions/me/membership-plans:
+    get:
+      tags: [Institutions]
+      summary: List club membership plans
+      description: Institution role required. Returns plans defined by the club (F-40).
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MembershipPlan'
+    post:
+      tags: [Institutions]
+      summary: Create a membership plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMembershipPlanRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipPlan'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /institutions/me/membership-plans/{id}:
+    patch:
+      tags: [Institutions]
+      summary: Update a membership plan
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMembershipPlanRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipPlan'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Plan not found
+    delete:
+      tags: [Institutions]
+      summary: Deactivate a membership plan
+      description: Soft-deletes the plan (`active = false`). Fails if active members exist.
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Plan deactivated
+        '404':
+          description: Plan not found
+        '409':
+          description: Plan has active members
+
+  /institutions/me/membership-settings:
+    get:
+      tags: [Institutions]
+      summary: Get membership billing settings
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipSettings'
+    patch:
+      tags: [Institutions]
+      summary: Update membership billing settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMembershipSettingsRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipSettings'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /institutions/me/members:
+    get:
+      tags: [Institutions]
+      summary: List club members
+      description: Institution member list with fee status (F-39).
+      parameters:
+        - name: status
+          in: query
+          description: Filter by fee status bucket
+          schema:
+            type: string
+            enum: [up_to_date, pending, overdue, inactive]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ClubMember'
+    post:
+      tags: [Institutions]
+      summary: Register a club member manually
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddClubMemberRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClubMember'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: User is already a member
+
+  /institutions/me/members/summary:
+    get:
+      tags: [Institutions]
+      summary: Club members summary counts
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembersSummary'
+
+  /institutions/me/members/{id}:
+    delete:
+      tags: [Institutions]
+      summary: Remove a club member
+      description: Marks the member inactive and cancels their subscription.
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Member removed
+        '404':
+          description: Member not found
+
+  /institutions/me/membership-invites:
+    get:
+      tags: [Institutions]
+      summary: List membership invites
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MembershipInvite'
+    post:
+      tags: [Institutions]
+      summary: Create a membership invite
+      description: Sends email notification when `email` is provided (F-43).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMembershipInviteRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipInvite'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /institutions/me/membership-invites/bulk:
+    post:
+      tags: [Institutions]
+      summary: Bulk-create membership invites
+      description: CSV-style bulk upload. Maximum 500 members per request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkMembershipInviteRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkMembershipInviteResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /institutions/me/membership-invites/{id}:
+    delete:
+      tags: [Institutions]
+      summary: Cancel a pending invite
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Invite cancelled
+        '404':
+          description: Invite not found or already used
+
+  /memberships/invites/{code}:
+    get:
+      tags: [Memberships]
+      security: []
+      summary: Preview a membership invite by code
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            example: A1B2C3D4
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipInvitePreview'
+        '400':
+          description: Invite expired or no longer valid
+        '404':
+          description: Invite not found
+
+  /memberships/invites/{code}/accept:
+    post:
+      tags: [Memberships]
+      summary: Accept invite and start authorization
+      description: Athlete role required. Creates membership and returns Mercado Pago authorization URL.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptMembershipInviteResponse'
+        '403':
+          description: Wrong role or invite email mismatch
+        '409':
+          description: Already a member of this club
+
+  /memberships/me:
+    get:
+      tags: [Memberships]
+      summary: List my club memberships
+      description: Athlete role required (F-42).
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ClubMember'
+
+  /memberships/me/{memberId}/statement:
+    get:
+      tags: [Memberships]
+      summary: Membership statement of account
+      description: Fee, due dates, payment history, and amount due (F-42).
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipStatement'
+        '404':
+          description: Membership not found
+
+  /memberships/me/{memberId}/authorize:
+    post:
+      tags: [Memberships]
+      summary: Start recurring debit authorization
+      description: Athlete role required. Returns Mercado Pago pre-approval URL (F-41).
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipAuthorizationResponse'
+        '400':
+          description: Authorization not required or payments not configured
+        '404':
+          description: Membership not found
+
+  /memberships/me/{memberId}/pay-debt:
+    post:
+      tags: [Memberships]
+      summary: Pay outstanding membership debt
+      description: Athlete role required. Creates a one-off checkout for overdue fees (F-42).
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipDebtPaymentResponse'
+        '400':
+          description: No outstanding debt or payments not configured
+        '404':
+          description: Membership not found
 
   /classes/search:
     get:
@@ -1910,6 +2271,438 @@ components:
           $ref: '#/components/schemas/Money'
         attendanceRate:
           type: number
+
+    MembershipBillingFrequency:
+      type: string
+      enum: [monthly, quarterly, annual]
+
+    MembershipPlanType:
+      type: string
+      enum: [individual, family]
+
+    ClubMemberStatus:
+      type: string
+      enum:
+        - invited
+        - pending_authorization
+        - active
+        - pending_payment
+        - overdue
+        - inactive
+
+    ClubMemberFeeStatus:
+      type: string
+      enum: [up_to_date, pending, overdue, inactive]
+
+    MembershipInviteStatus:
+      type: string
+      enum: [pending, accepted, expired, cancelled]
+
+    MembershipPaymentStatus:
+      type: string
+      enum: [pending, approved, rejected, refunded]
+
+    MembershipPlan:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        institutionId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        priceCents:
+          type: integer
+        priceCurrency:
+          type: string
+          example: UYU
+        billingFrequency:
+          $ref: '#/components/schemas/MembershipBillingFrequency'
+        planType:
+          $ref: '#/components/schemas/MembershipPlanType'
+        maxMembers:
+          type: integer
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateMembershipPlanRequest:
+      type: object
+      required: [name, priceCents, billingFrequency]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        description:
+          type: string
+        priceCents:
+          type: integer
+          minimum: 0
+        priceCurrency:
+          type: string
+          example: UYU
+        billingFrequency:
+          $ref: '#/components/schemas/MembershipBillingFrequency'
+        planType:
+          $ref: '#/components/schemas/MembershipPlanType'
+          default: individual
+        maxMembers:
+          type: integer
+          minimum: 1
+        active:
+          type: boolean
+          default: true
+
+    UpdateMembershipPlanRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        description:
+          type: string
+        priceCents:
+          type: integer
+          minimum: 0
+        priceCurrency:
+          type: string
+        billingFrequency:
+          $ref: '#/components/schemas/MembershipBillingFrequency'
+        planType:
+          $ref: '#/components/schemas/MembershipPlanType'
+        maxMembers:
+          type: integer
+          minimum: 1
+        active:
+          type: boolean
+
+    MembershipSettings:
+      type: object
+      properties:
+        graceDays:
+          type: integer
+          minimum: 0
+          maximum: 90
+          default: 7
+        dueReminderDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 3
+
+    UpdateMembershipSettingsRequest:
+      type: object
+      properties:
+        graceDays:
+          type: integer
+          minimum: 0
+          maximum: 90
+        dueReminderDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+
+    ClubMember:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        institutionId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        planId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ClubMemberStatus'
+        feeStatus:
+          $ref: '#/components/schemas/ClubMemberFeeStatus'
+        contactName:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+        contactPhone:
+          type: string
+        joinedAt:
+          type: string
+          format: date-time
+        leftAt:
+          type: string
+          format: date-time
+        planName:
+          type: string
+        institutionName:
+          type: string
+        nextBillingAt:
+          type: string
+          format: date-time
+        subscriptionStatus:
+          type: string
+          enum: [pending_authorization, active, past_due, cancelled]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AddClubMemberRequest:
+      type: object
+      required: [planId]
+      properties:
+        planId:
+          type: string
+          format: uuid
+        contactName:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+        contactPhone:
+          type: string
+        userId:
+          type: string
+          format: uuid
+
+    MembersSummary:
+      type: object
+      properties:
+        upToDate:
+          type: integer
+        pending:
+          type: integer
+        overdue:
+          type: integer
+        total:
+          type: integer
+
+    MembershipInvite:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        institutionId:
+          type: string
+          format: uuid
+        planId:
+          type: string
+          format: uuid
+        code:
+          type: string
+        email:
+          type: string
+          format: email
+        invitedName:
+          type: string
+        invitedPhone:
+          type: string
+        status:
+          $ref: '#/components/schemas/MembershipInviteStatus'
+        expiresAt:
+          type: string
+          format: date-time
+        bulkBatchId:
+          type: string
+        planName:
+          type: string
+        institutionName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateMembershipInviteRequest:
+      type: object
+      required: [planId]
+      properties:
+        planId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        invitedName:
+          type: string
+        invitedPhone:
+          type: string
+        expiresInDays:
+          type: integer
+          default: 30
+
+    BulkMembershipInviteRequest:
+      type: object
+      required: [members]
+      properties:
+        members:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/CreateMembershipInviteRequest'
+
+    BulkMembershipInviteResponse:
+      type: object
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              ok:
+                type: boolean
+              invite:
+                $ref: '#/components/schemas/MembershipInvite'
+              error:
+                type: string
+              row:
+                type: object
+
+    MembershipInvitePreview:
+      type: object
+      properties:
+        code:
+          type: string
+        institutionName:
+          type: string
+        institutionLogo:
+          type: string
+          format: uri
+        plan:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            description:
+              type: string
+            price:
+              $ref: '#/components/schemas/Money'
+            billingFrequency:
+              $ref: '#/components/schemas/MembershipBillingFrequency'
+            planType:
+              $ref: '#/components/schemas/MembershipPlanType'
+        invitedName:
+          type: string
+        email:
+          type: string
+          format: email
+        expiresAt:
+          type: string
+          format: date-time
+
+    MembershipPayment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        subscriptionId:
+          type: string
+          format: uuid
+        clubMemberId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/MembershipPaymentStatus'
+        amount:
+          $ref: '#/components/schemas/Money'
+        periodStart:
+          type: string
+          format: date-time
+        periodEnd:
+          type: string
+          format: date-time
+        isManual:
+          type: boolean
+        checkoutUrl:
+          type: string
+          format: uri
+        createdAt:
+          type: string
+          format: date-time
+
+    MembershipStatement:
+      type: object
+      properties:
+        member:
+          $ref: '#/components/schemas/ClubMember'
+        plan:
+          type: object
+          properties:
+            name:
+              type: string
+            price:
+              $ref: '#/components/schemas/Money'
+            billingFrequency:
+              $ref: '#/components/schemas/MembershipBillingFrequency'
+        nextDueDate:
+          type: string
+          format: date-time
+        amountDue:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          nullable: true
+        graceDays:
+          type: integer
+        payments:
+          type: array
+          items:
+            $ref: '#/components/schemas/MembershipPayment'
+
+    MembershipAuthorizationResponse:
+      type: object
+      properties:
+        authorizationUrl:
+          type: string
+          format: uri
+        preapprovalId:
+          type: string
+
+    AcceptMembershipInviteResponse:
+      allOf:
+        - $ref: '#/components/schemas/MembershipAuthorizationResponse'
+        - type: object
+          properties:
+            member:
+              $ref: '#/components/schemas/ClubMember'
+            subscriptionId:
+              type: string
+              format: uuid
+
+    MembershipDebtPaymentResponse:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        checkoutUrl:
+          type: string
+          format: uri
+        amount:
+          $ref: '#/components/schemas/Money'
 
     AppConfig:
       type: object
