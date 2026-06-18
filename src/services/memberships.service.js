@@ -159,6 +159,40 @@ async function getPlanForInstitution(institutionId, planId) {
   return rows[0];
 }
 
+async function ensureSubscriptionForMember(member) {
+  const { rows: subs } = await query(
+    `SELECT id FROM membership_subscriptions WHERE club_member_id = $1`,
+    [member.id],
+  );
+  if (subs.length) return;
+
+  const subStatus =
+    member.status === 'active'
+      ? 'active'
+      : ['pending_payment', 'overdue'].includes(member.status)
+        ? 'past_due'
+        : 'pending_authorization';
+
+  await query(
+    `INSERT INTO membership_subscriptions (club_member_id, institution_id, plan_id, status)
+     VALUES ($1, $2, $3, $4)`,
+    [member.id, member.institution_id, member.plan_id, subStatus],
+  );
+}
+
+function resolveNextDueDate(member, payments = []) {
+  if (member.next_billing_at) {
+    return member.next_billing_at.toISOString();
+  }
+
+  const latestApproved = payments.find((p) => p.status === 'approved' && p.period_end);
+  if (latestApproved?.period_end) {
+    return latestApproved.period_end.toISOString();
+  }
+
+  return null;
+}
+
 async function linkMemberToUser(memberId, userId) {
   const { rows } = await query(`SELECT * FROM club_members WHERE id = $1`, [memberId]);
   if (!rows.length) return;
@@ -211,6 +245,22 @@ async function syncMemberLinksForUser(userId) {
 
   for (const row of pending) {
     await linkMemberToUser(row.id, userId);
+  }
+
+  const { rows: withoutSub } = await query(
+    `SELECT cm.* FROM club_members cm
+     WHERE cm.left_at IS NULL
+       AND (
+         cm.user_id = $1
+         OR LOWER(cm.contact_email) = LOWER($2)
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM membership_subscriptions ms WHERE ms.club_member_id = cm.id
+       )`,
+    [userId, userRows[0].email],
+  );
+  for (const member of withoutSub) {
+    await ensureSubscriptionForMember(member);
   }
 }
 
@@ -584,13 +634,7 @@ async function addMember(userId, body) {
 
   const member = rows[0];
 
-  if (memberUserId) {
-    await query(
-      `INSERT INTO membership_subscriptions (club_member_id, institution_id, plan_id, status)
-       VALUES ($1, $2, $3, 'pending_authorization')`,
-      [member.id, institution.id, plan.id],
-    );
-  }
+  await ensureSubscriptionForMember(member);
 
   return serializeMember(member, { planName: plan.name, institutionName: institution.name });
 }
@@ -823,6 +867,20 @@ async function acceptInvite(user, code) {
 
 async function loadMemberForUser(userId, memberId) {
   await syncMemberLinksForUser(userId);
+
+  const { rows: owned } = await query(
+    `SELECT cm.*
+     FROM club_members cm
+     WHERE cm.id = $1 AND cm.left_at IS NULL
+       AND (
+         cm.user_id = $2
+         OR LOWER(cm.contact_email) = (SELECT LOWER(email) FROM users WHERE id = $2)
+       )`,
+    [memberId, userId],
+  );
+  if (!owned.length) throw notFound('Membership not found');
+  await ensureSubscriptionForMember(owned[0]);
+
   const { rows } = await query(
     `SELECT cm.*, mp.name AS plan_name, mp.price_cents, mp.price_currency,
             mp.billing_frequency, i.name AS institution_name, i.user_id AS institution_user_id,
@@ -1044,11 +1102,13 @@ async function getStatement(userId, memberId) {
     amountDueCents = member.price_cents;
   }
 
+  const nextDueDate = resolveNextDueDate(member, payments);
+
   return {
     member: serializeMember(member, {
       planName: member.plan_name,
       institutionName: member.institution_name,
-      nextBillingAt: member.next_billing_at?.toISOString(),
+      nextBillingAt: nextDueDate || undefined,
       subscriptionStatus: member.subscription_status,
     }),
     plan: {
@@ -1056,7 +1116,7 @@ async function getStatement(userId, memberId) {
       price: serializeMoney(member.price_cents, member.price_currency),
       billingFrequency: member.billing_frequency,
     },
-    nextDueDate: member.next_billing_at?.toISOString(),
+    nextDueDate,
     amountDue: amountDueCents > 0 ? serializeMoney(amountDueCents, member.price_currency) : null,
     graceDays: settings.grace_days,
     payments: payments.map(serializePayment),
