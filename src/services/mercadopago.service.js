@@ -112,7 +112,11 @@ async function createPreapproval({
   return {
     preapprovalId: preapproval.id,
     authorizationUrl:
-      preapproval.init_point || preapproval.sandbox_init_point || preapproval.back_url,
+      (mercadopagoAccessToken.startsWith('TEST-')
+        ? preapproval.sandbox_init_point
+        : null) ||
+      preapproval.init_point ||
+      preapproval.sandbox_init_point,
   };
 }
 
