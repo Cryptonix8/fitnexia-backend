@@ -73,21 +73,36 @@ function buildMembershipDeepLink(memberId, status) {
   return `${appDeepLinkScheme}://membership/complete?memberId=${memberId}&status=${status}`;
 }
 
-/** Mercado Pago preapproval requires an HTTPS back_url (not app deep links). */
-function buildMembershipAuthorizeBackUrl(memberId, status = 'success') {
+function requireHttpsApiPublicUrl(purpose) {
   const base = apiPublicUrl.replace(/\/$/, '');
   if (!base.startsWith('https://')) {
     const err = new Error(
-      'API_PUBLIC_URL must be a public HTTPS URL (e.g. ngrok) for Mercado Pago preapproval',
+      `API_PUBLIC_URL must be a public HTTPS URL (e.g. ngrok) for Mercado Pago ${purpose}`,
     );
     err.code = 'MP_BACK_URL_CONFIG';
     throw err;
   }
+  return base;
+}
+
+/** Mercado Pago preapproval requires an HTTPS back_url (not app deep links). */
+function buildMembershipAuthorizeBackUrl(memberId, status = 'success') {
+  const base = requireHttpsApiPublicUrl('preapproval');
   const params = new URLSearchParams({
     memberId: String(memberId),
     status,
   });
   return `${base}/v1/memberships/authorize-return?${params.toString()}`;
+}
+
+/** Checkout Pro debt payment — HTTPS return URL that redirects to the app. */
+function buildMembershipCheckoutBackUrl(memberId, status = 'success') {
+  const base = requireHttpsApiPublicUrl('checkout');
+  const params = new URLSearchParams({
+    memberId: String(memberId),
+    status,
+  });
+  return `${base}/v1/memberships/checkout-return?${params.toString()}`;
 }
 
 function frequencyToMercadoPago(frequency) {
@@ -153,12 +168,25 @@ async function createCheckoutPreference({
   amountCents,
   currency,
   returnBookingId,
+  membershipMemberId,
   collectorId,
   marketplaceFee,
 }) {
   const unitPrice = amountCents / 100;
   const notificationUrl = `${apiPublicUrl}/v1/webhooks/mercadopago`;
   const deepLinkBookingId = returnBookingId || externalReference;
+
+  const backUrls = membershipMemberId
+    ? {
+        success: buildMembershipCheckoutBackUrl(membershipMemberId, 'success'),
+        failure: buildMembershipCheckoutBackUrl(membershipMemberId, 'failure'),
+        pending: buildMembershipCheckoutBackUrl(membershipMemberId, 'pending'),
+      }
+    : {
+        success: buildDeepLink(deepLinkBookingId, 'success'),
+        failure: buildDeepLink(deepLinkBookingId, 'failure'),
+        pending: buildDeepLink(deepLinkBookingId, 'pending'),
+      };
 
   const body = {
     items: [
@@ -172,11 +200,7 @@ async function createCheckoutPreference({
     ],
     external_reference: externalReference,
     notification_url: notificationUrl,
-    back_urls: {
-      success: buildDeepLink(deepLinkBookingId, 'success'),
-      failure: buildDeepLink(deepLinkBookingId, 'failure'),
-      pending: buildDeepLink(deepLinkBookingId, 'pending'),
-    },
+    back_urls: backUrls,
     auto_return: 'approved',
   };
 
@@ -235,6 +259,7 @@ module.exports = {
   buildDeepLink,
   buildMembershipDeepLink,
   buildMembershipAuthorizeBackUrl,
+  buildMembershipCheckoutBackUrl,
   resolveMercadoPagoCurrency,
   resolveCheckoutInitPoint,
   resolvePreapprovalInitPoint,

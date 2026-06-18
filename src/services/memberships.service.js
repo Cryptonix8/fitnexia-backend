@@ -18,6 +18,7 @@ const {
   createPreapproval,
   buildMockCheckoutUrl,
   buildMockMembershipAuthorizeUrl,
+  searchMercadoPagoPaymentsByReference,
 } = require('./mercadopago.service');
 const {
   sendMembershipInviteEmail,
@@ -1099,7 +1100,7 @@ async function payDebt(userId, memberId) {
       title: `${member.institution_name} — cuota pendiente`,
       amountCents,
       currency: member.price_currency,
-      returnBookingId: memberId,
+      membershipMemberId: memberId,
     });
     preferenceId = preference.preferenceId;
     checkoutUrl = preference.checkoutUrl;
@@ -1210,6 +1211,74 @@ async function getMembershipPaymentById(paymentId) {
   const { rows } = await query(`SELECT * FROM membership_payments WHERE id = $1`, [paymentId]);
   if (!rows.length) throw notFound('Payment not found');
   return rows[0];
+}
+
+async function getMembershipPaymentForUser(userId, memberId, paymentId) {
+  await loadMemberForUser(userId, memberId);
+  const payment = await getMembershipPaymentById(paymentId);
+  if (payment.club_member_id !== memberId) {
+    throw forbidden('Payment does not belong to this membership');
+  }
+  return serializePayment(payment);
+}
+
+async function syncMembershipPayment(userId, memberId, paymentId) {
+  await loadMemberForUser(userId, memberId);
+  const payment = await getMembershipPaymentById(paymentId);
+  if (payment.club_member_id !== memberId) {
+    throw forbidden('Payment does not belong to this membership');
+  }
+
+  if (payment.status === 'approved') {
+    const member = await loadMemberForUser(userId, memberId);
+    return {
+      synced: true,
+      payment: serializePayment(payment),
+      memberFeeStatus: mapFeeStatus(member.status),
+    };
+  }
+
+  if (!isMercadoPagoConfigured()) {
+    return {
+      synced: false,
+      payment: serializePayment(payment),
+      reason: 'mercadopago_not_configured',
+    };
+  }
+
+  const payRef = `msub_pay:${paymentId}`;
+  const mpPayments = await searchMercadoPagoPaymentsByReference(payRef);
+  const approved = mpPayments.find((p) => p.status === 'approved');
+  if (approved) {
+    await confirmMembershipPayment(paymentId, String(approved.id));
+    const updated = await getMembershipPaymentById(paymentId);
+    const member = await loadMemberForUser(userId, memberId);
+    return {
+      synced: true,
+      payment: serializePayment(updated),
+      memberFeeStatus: mapFeeStatus(member.status),
+    };
+  }
+
+  const rejected = mpPayments.find((p) => ['rejected', 'cancelled'].includes(p.status));
+  if (rejected) {
+    await query(
+      `UPDATE membership_payments SET status = 'rejected', updated_at = now() WHERE id = $1`,
+      [paymentId],
+    );
+    const updated = await getMembershipPaymentById(paymentId);
+    return {
+      synced: true,
+      payment: serializePayment(updated),
+      memberFeeStatus: mapFeeStatus((await loadMemberForUser(userId, memberId)).status),
+    };
+  }
+
+  return {
+    synced: false,
+    payment: serializePayment(payment),
+    reason: 'payment_not_found',
+  };
 }
 
 async function handlePreapprovalAuthorized(subscriptionId, preapprovalId) {
@@ -1644,6 +1713,8 @@ module.exports = {
   payDebt,
   confirmMembershipPayment,
   getMembershipPaymentById,
+  getMembershipPaymentForUser,
+  syncMembershipPayment,
   runMembershipScheduler,
   processDueBilling,
   addBillingPeriod,

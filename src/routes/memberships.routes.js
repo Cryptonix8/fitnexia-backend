@@ -7,6 +7,7 @@ const {
   fetchMercadoPagoPreapproval,
   isMercadoPagoConfigured,
 } = require('../services/mercadopago.service');
+const paymentsService = require('../services/payments.service');
 const membershipsService = require('../services/memberships.service');
 const { pool } = require('../db/pool');
 
@@ -52,6 +53,36 @@ router.get(
         await membershipsService
           .handlePreapprovalAuthorized(rows[0].id, preapprovalId)
           .catch(() => {});
+      }
+    }
+
+    if (!memberId) {
+      res.status(400).send('Missing memberId');
+      return;
+    }
+
+    const deepLink = buildMembershipDeepLink(memberId, status);
+    res.redirect(deepLink);
+  }),
+);
+
+router.get(
+  '/checkout-return',
+  asyncHandler(async (req, res) => {
+    const memberId = String(req.query.memberId || '');
+    const status =
+      req.query.status === 'failure'
+        ? 'failure'
+        : req.query.status === 'pending'
+          ? 'pending'
+          : 'success';
+
+    const paymentId = req.query.payment_id ? String(req.query.payment_id) : null;
+    if (paymentId && isMercadoPagoConfigured()) {
+      try {
+        await paymentsService.processMercadoPagoPaymentId(paymentId);
+      } catch {
+        // Webhook may still confirm; continue to app redirect.
       }
     }
 
@@ -119,6 +150,34 @@ router.post(
   requireRole('athlete'),
   asyncHandler(async (req, res) => {
     const result = await membershipsService.payDebt(req.user.id, req.params.memberId);
+    res.json(result);
+  }),
+);
+
+router.get(
+  '/me/:memberId/payments/:paymentId',
+  requireAuth,
+  requireRole('athlete'),
+  asyncHandler(async (req, res) => {
+    const payment = await membershipsService.getMembershipPaymentForUser(
+      req.user.id,
+      req.params.memberId,
+      req.params.paymentId,
+    );
+    res.json(payment);
+  }),
+);
+
+router.post(
+  '/me/:memberId/payments/:paymentId/sync',
+  requireAuth,
+  requireRole('athlete'),
+  asyncHandler(async (req, res) => {
+    const result = await membershipsService.syncMembershipPayment(
+      req.user.id,
+      req.params.memberId,
+      req.params.paymentId,
+    );
     res.json(result);
   }),
 );

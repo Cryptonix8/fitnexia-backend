@@ -792,6 +792,73 @@ paths:
         '404':
           description: Membership not found
 
+  /memberships/me/{memberId}/payments/{paymentId}:
+    get:
+      tags: [Memberships]
+      summary: Get membership payment status
+      description: Athlete role required. Returns a single debt/recurring payment for the member (F-42).
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipPayment'
+        '403':
+          description: Payment does not belong to this membership
+        '404':
+          description: Membership or payment not found
+
+  /memberships/me/{memberId}/payments/{paymentId}/sync:
+    post:
+      tags: [Memberships]
+      summary: Sync membership payment from Mercado Pago
+      description: Athlete role required. Polls Mercado Pago for pending debt payments (F-42).
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  synced:
+                    type: boolean
+                  payment:
+                    $ref: '#/components/schemas/MembershipPayment'
+                  memberFeeStatus:
+                    $ref: '#/components/schemas/ClubMemberFeeStatus'
+                  reason:
+                    type: string
+        '403':
+          description: Payment does not belong to this membership
+        '404':
+          description: Membership or payment not found
+
   /memberships/me/{memberId}/authorize:
     post:
       tags: [Memberships]
