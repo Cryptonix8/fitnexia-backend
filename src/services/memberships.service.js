@@ -39,6 +39,11 @@ function generateInviteCode() {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
 }
 
+function buildMembershipInviteLink(code) {
+  const { appDeepLinkScheme } = require('../config/env');
+  return `${appDeepLinkScheme}://membership/join?code=${encodeURIComponent(code)}`;
+}
+
 function addBillingPeriod(date, frequency) {
   const d = new Date(date);
   if (frequency === 'monthly') d.setMonth(d.getMonth() + 1);
@@ -111,6 +116,7 @@ function serializeInvite(row, extras = {}) {
     bulkBatchId: row.bulk_batch_id || undefined,
     planName: extras.planName,
     institutionName: extras.institutionName,
+    joinUrl: extras.joinUrl ?? (row.code ? buildMembershipInviteLink(row.code) : undefined),
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -450,6 +456,7 @@ async function createInvite(userId, body) {
       institutionName: institution.name,
       planName: plan.name,
       inviteCode: code,
+      joinLink: buildMembershipInviteLink(code),
     }).catch((err) => console.warn('[memberships] invite email failed:', err.message));
 
     notificationsService

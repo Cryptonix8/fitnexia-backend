@@ -386,24 +386,29 @@ function renderPasswordResetOpenPage({
 </html>`;
 }
 
-async function sendMembershipInviteEmail({ to, institutionName, planName, inviteCode }) {
+async function sendMembershipInviteEmail({ to, institutionName, planName, inviteCode, joinLink }) {
   const subject = `${institutionName} te invitó a unirte como socio`;
+  const linkLine = joinLink ? `Enlace directo: ${joinLink}` : '';
   const text = [
     'Hola,',
     '',
     `${institutionName} te invitó a unirte con el plan "${planName}".`,
     '',
     `Código de invitación: ${inviteCode}`,
+    linkLine,
     '',
-    'Abrí la app Fitnexia, andá a Membresía del club e ingresá el código.',
+    'Abrí la app Fitnexia, andá a Membresía del club e ingresá el código o el enlace.',
     '',
     '— Fitnexia',
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
   const html = `
     <p>Hola,</p>
     <p><strong>${escapeHtml(institutionName)}</strong> te invitó a unirte con el plan <strong>${escapeHtml(planName)}</strong>.</p>
     <p>Código de invitación: <strong>${escapeHtml(inviteCode)}</strong></p>
-    <p>Abrí la app Fitnexia, andá a Membresía del club e ingresá el código.</p>
+    ${joinLink ? `<p><a href="${escapeHtml(joinLink)}">Abrir invitación en Fitnexia</a></p>` : ''}
+    <p>Abrí la app Fitnexia, andá a Membresía del club e ingresá el código o el enlace.</p>
     <p>— Fitnexia</p>
   `;
   return sendMail({ to, subject, text, html });
