@@ -156,6 +156,16 @@ router.post(
   }),
 );
 
+router.get(
+  '/me/membership-plans/:id',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const plan = await membershipsService.getPlan(req.user.id, req.params.id);
+    res.json(plan);
+  }),
+);
+
 router.patch(
   '/me/membership-plans/:id',
   requireAuth,

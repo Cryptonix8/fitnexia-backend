@@ -169,6 +169,12 @@ async function listPlans(userId) {
   return rows.map(serializePlan);
 }
 
+async function getPlan(userId, planId) {
+  const institution = await institutionsService.getInstitutionByUserId(userId);
+  const row = await getPlanForInstitution(institution.id, planId);
+  return serializePlan(row);
+}
+
 async function createPlan(userId, body) {
   const validated = validateMembershipPlan(body);
   const institution = await institutionsService.getInstitutionByUserId(userId);
@@ -196,7 +202,14 @@ async function createPlan(userId, body) {
 async function updatePlan(userId, planId, body) {
   const validated = validateMembershipPlan(body, { partial: true });
   const institution = await institutionsService.getInstitutionByUserId(userId);
-  await getPlanForInstitution(institution.id, planId);
+  const existing = await getPlanForInstitution(institution.id, planId);
+
+  const nextPlanType = validated.planType ?? existing.plan_type;
+  const nextMaxMembers =
+    validated.maxMembers !== undefined ? validated.maxMembers : existing.max_members;
+  if (nextPlanType === 'family' && !nextMaxMembers) {
+    throw badRequest('maxMembers is required for family plans');
+  }
 
   const fieldMap = {
     name: 'name',
@@ -1276,6 +1289,7 @@ async function runMembershipScheduler() {
 
 module.exports = {
   listPlans,
+  getPlan,
   createPlan,
   updatePlan,
   deletePlan,

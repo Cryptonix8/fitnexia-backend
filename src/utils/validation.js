@@ -417,6 +417,13 @@ function validateMembershipPlan(body, { partial = false } = {}) {
       }
       return null;
     },
+    () => {
+      const effectivePlanType = planType ?? (partial ? undefined : 'individual');
+      if (effectivePlanType === 'family' && (maxMembers === undefined || maxMembers === null)) {
+        return { field: 'maxMembers', message: 'maxMembers is required for family plans' };
+      }
+      return null;
+    },
   ]);
 
   if (!partial && !Object.keys(body ?? {}).length) {
