@@ -52,6 +52,23 @@ function buildMembershipDeepLink(memberId, status) {
   return `${appDeepLinkScheme}://membership/complete?memberId=${memberId}&status=${status}`;
 }
 
+/** Mercado Pago preapproval requires an HTTPS back_url (not app deep links). */
+function buildMembershipAuthorizeBackUrl(memberId, status = 'success') {
+  const base = apiPublicUrl.replace(/\/$/, '');
+  if (!base.startsWith('https://')) {
+    const err = new Error(
+      'API_PUBLIC_URL must be a public HTTPS URL (e.g. ngrok) for Mercado Pago preapproval',
+    );
+    err.code = 'MP_BACK_URL_CONFIG';
+    throw err;
+  }
+  const params = new URLSearchParams({
+    memberId: String(memberId),
+    status,
+  });
+  return `${base}/v1/memberships/authorize-return?${params.toString()}`;
+}
+
 function frequencyToMercadoPago(frequency) {
   if (frequency === 'monthly') return { frequency: 1, frequency_type: 'months' };
   if (frequency === 'quarterly') return { frequency: 3, frequency_type: 'months' };
@@ -83,7 +100,7 @@ async function createPreapproval({
       transaction_amount: unitPrice,
       currency_id: resolveMercadoPagoCurrency(currency),
     },
-    back_url: backUrl || buildMembershipDeepLink(returnMemberId, 'success'),
+    back_url: backUrl || buildMembershipAuthorizeBackUrl(returnMemberId, 'success'),
     status: 'pending',
   };
 
@@ -199,5 +216,6 @@ module.exports = {
   buildMockMembershipAuthorizeUrl,
   buildDeepLink,
   buildMembershipDeepLink,
+  buildMembershipAuthorizeBackUrl,
   resolveMercadoPagoCurrency,
 };

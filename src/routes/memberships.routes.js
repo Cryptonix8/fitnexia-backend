@@ -2,10 +2,68 @@ const { Router } = require('express');
 const asyncHandler = require('../utils/asyncHandler');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { isDev } = require('../config/env');
-const { buildMembershipDeepLink } = require('../services/mercadopago.service');
+const {
+  buildMembershipDeepLink,
+  fetchMercadoPagoPreapproval,
+  isMercadoPagoConfigured,
+} = require('../services/mercadopago.service');
 const membershipsService = require('../services/memberships.service');
+const { pool } = require('../db/pool');
 
 const router = Router();
+
+router.get(
+  '/authorize-return',
+  asyncHandler(async (req, res) => {
+    const memberId = String(req.query.memberId || '');
+    const preapprovalId = req.query.preapproval_id
+      ? String(req.query.preapproval_id)
+      : req.query.preapprovalId
+        ? String(req.query.preapprovalId)
+        : null;
+
+    let status = req.query.status === 'failure' ? 'failure' : 'success';
+
+    if (memberId && preapprovalId && isMercadoPagoConfigured()) {
+      try {
+        const preapproval = await fetchMercadoPagoPreapproval(preapprovalId);
+        if (preapproval.status === 'authorized') {
+          const subscriptionId = String(preapproval.external_reference || '').startsWith('msub:')
+            ? String(preapproval.external_reference).slice('msub:'.length)
+            : null;
+          if (subscriptionId) {
+            await membershipsService.handlePreapprovalAuthorized(subscriptionId, preapprovalId);
+          }
+          status = 'success';
+        } else if (['cancelled', 'paused'].includes(preapproval.status)) {
+          status = 'failure';
+        }
+      } catch {
+        // Webhook may still activate; continue to app redirect.
+      }
+    } else if (memberId && preapprovalId) {
+      const { rows } = await pool.query(
+        `SELECT ms.id FROM membership_subscriptions ms
+         JOIN club_members cm ON cm.id = ms.club_member_id
+         WHERE cm.id = $1`,
+        [memberId],
+      );
+      if (rows.length) {
+        await membershipsService
+          .handlePreapprovalAuthorized(rows[0].id, preapprovalId)
+          .catch(() => {});
+      }
+    }
+
+    if (!memberId) {
+      res.status(400).send('Missing memberId');
+      return;
+    }
+
+    const deepLink = buildMembershipDeepLink(memberId, status);
+    res.redirect(deepLink);
+  }),
+);
 
 router.get(
   '/invites/:code',
