@@ -27,21 +27,20 @@ function isTestMercadoPagoToken() {
   return mercadopagoAccessToken.startsWith('TEST-');
 }
 
-/** Checkout preferences expose sandbox_init_point; preapproval often only returns production init_point. */
-function toMercadoPagoSandboxUrl(url) {
-  if (!url || typeof url !== 'string') return url;
-  if (/sandbox\.mercadopago/i.test(url)) return url;
-
-  return url.replace(
-    /https?:\/\/(?:www\.)?mercadopago(\.[a-z0-9.-]+)/gi,
-    (_match, domainSuffix) => `https://sandbox.mercadopago${domainSuffix}`,
-  );
+/** Checkout Pro: sandbox_init_point when present (TEST token). */
+function resolveCheckoutInitPoint(initPoint, sandboxInitPoint) {
+  if (isTestMercadoPagoToken()) {
+    return sandboxInitPoint || initPoint;
+  }
+  return initPoint || sandboxInitPoint;
 }
 
-function resolveMercadoPagoInitPoint(initPoint, sandboxInitPoint) {
-  if (isTestMercadoPagoToken()) {
-    return sandboxInitPoint || toMercadoPagoSandboxUrl(initPoint) || initPoint;
-  }
+/**
+ * Subscriptions preapproval: always use init_point from the API.
+ * With TEST credentials, mercadopago.com.uy runs in test mode — do NOT rewrite to
+ * sandbox.mercadopago.com.uy (subscriptions/checkout 404s on that host).
+ */
+function resolvePreapprovalInitPoint(initPoint, sandboxInitPoint) {
   return initPoint || sandboxInitPoint;
 }
 
@@ -133,7 +132,7 @@ async function createPreapproval({
 
   return {
     preapprovalId: preapproval.id,
-    authorizationUrl: resolveMercadoPagoInitPoint(
+    authorizationUrl: resolvePreapprovalInitPoint(
       preapproval.init_point,
       preapproval.sandbox_init_point,
     ),
@@ -193,7 +192,7 @@ async function createCheckoutPreference({
 
   return {
     preferenceId: preference.id,
-    checkoutUrl: resolveMercadoPagoInitPoint(preference.init_point, preference.sandbox_init_point),
+    checkoutUrl: resolveCheckoutInitPoint(preference.init_point, preference.sandbox_init_point),
   };
 }
 
@@ -237,6 +236,6 @@ module.exports = {
   buildMembershipDeepLink,
   buildMembershipAuthorizeBackUrl,
   resolveMercadoPagoCurrency,
-  resolveMercadoPagoInitPoint,
-  toMercadoPagoSandboxUrl,
+  resolveCheckoutInitPoint,
+  resolvePreapprovalInitPoint,
 };
