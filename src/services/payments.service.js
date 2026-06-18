@@ -10,6 +10,7 @@ const {
   useMockPayments,
   createCheckoutPreference,
   fetchMercadoPagoPayment,
+  fetchMercadoPagoPreapproval,
   searchMercadoPagoPaymentsByReference,
   refundMercadoPagoPayment,
   buildMockCheckoutUrl,
@@ -453,16 +454,16 @@ async function approveMockPayment(paymentId) {
 async function processMercadoPagoPaymentId(providerPaymentId) {
   const mpPayment = await fetchMercadoPagoPayment(String(providerPaymentId));
   const externalReference = mpPayment.external_reference;
-  if (!externalReference) {
-    return { processed: false, reason: 'missing_external_reference' };
-  }
-
   const status = mpPayment.status;
-  const ref = String(externalReference);
+  const ref = externalReference ? String(externalReference) : '';
+  const amountCents = mpPayment.transaction_amount
+    ? Math.round(Number(mpPayment.transaction_amount) * 100)
+    : undefined;
+  const currency = mpPayment.currency_id;
+  const membershipsService = require('./memberships.service');
 
   if (ref.startsWith('msub_pay:')) {
     const membershipPaymentId = ref.slice('msub_pay:'.length);
-    const membershipsService = require('./memberships.service');
     if (status === 'approved') {
       await membershipsService.confirmMembershipPayment(membershipPaymentId, String(mpPayment.id));
       return { processed: true, membershipPaymentId, status: 'approved' };
@@ -475,6 +476,33 @@ async function processMercadoPagoPaymentId(providerPaymentId) {
       return { processed: true, membershipPaymentId, status: 'rejected' };
     }
     return { processed: true, membershipPaymentId, status: 'pending' };
+  }
+
+  if (ref.startsWith('msub:')) {
+    const subscriptionId = ref.slice('msub:'.length);
+    return membershipsService.processSubscriptionPayment(subscriptionId, {
+      providerPaymentId: String(mpPayment.id),
+      status,
+      amountCents,
+      currency,
+    });
+  }
+
+  if (mpPayment.preapproval_id) {
+    const result = await membershipsService.processSubscriptionPaymentByPreapproval(
+      String(mpPayment.preapproval_id),
+      {
+        providerPaymentId: String(mpPayment.id),
+        status,
+        amountCents,
+        currency,
+      },
+    );
+    if (result.processed) return result;
+  }
+
+  if (!externalReference) {
+    return { processed: false, reason: 'missing_external_reference' };
   }
 
   const isPass = ref.startsWith('pass:');
@@ -500,6 +528,28 @@ async function processMercadoPagoPaymentId(providerPaymentId) {
   }
 
   return { processed: true, externalReference, status: 'pending' };
+}
+
+async function processMercadoPagoPreapprovalId(preapprovalId) {
+  const preapproval = await fetchMercadoPagoPreapproval(String(preapprovalId));
+  const externalReference = preapproval.external_reference;
+  if (!externalReference || !String(externalReference).startsWith('msub:')) {
+    return { processed: false, reason: 'not_membership_preapproval' };
+  }
+
+  const subscriptionId = String(externalReference).slice('msub:'.length);
+  const membershipsService = require('./memberships.service');
+  const status = preapproval.status;
+
+  if (status === 'authorized') {
+    return membershipsService.handlePreapprovalAuthorized(subscriptionId, String(preapprovalId));
+  }
+
+  if (['cancelled', 'paused'].includes(status)) {
+    return membershipsService.handlePreapprovalCancelled(subscriptionId);
+  }
+
+  return { processed: true, subscriptionId, status };
 }
 
 async function processMercadoPagoWebhook(body) {
@@ -608,6 +658,7 @@ module.exports = {
   approveMockPayment,
   processMercadoPagoWebhook,
   processMercadoPagoPaymentId,
+  processMercadoPagoPreapprovalId,
   syncBookingPaymentFromMercadoPago,
   refundPaymentForBooking,
   getLatestPaymentForBooking,

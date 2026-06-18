@@ -32,6 +32,8 @@ function isPaymentsActive() {
   return paymentsEnabled && (isMercadoPagoConfigured() || useMockPayments());
 }
 
+const MEMBERSHIP_MAX_PAYMENT_RETRIES = 3;
+
 function generateInviteCode() {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
 }
@@ -825,12 +827,29 @@ async function startAuthorization(user, memberId) {
   return { authorizationUrl, preapprovalId };
 }
 
-async function activateSubscription(subscriptionId, { preapprovalId } = {}) {
+async function activateSubscription(subscriptionId, { preapprovalId, providerPaymentId } = {}) {
   const { rows } = await query(`SELECT * FROM membership_subscriptions WHERE id = $1`, [
     subscriptionId,
   ]);
   if (!rows.length) throw notFound('Subscription not found');
   const sub = rows[0];
+
+  if (sub.status === 'active') {
+    if (providerPaymentId) {
+      const { rows: dup } = await query(
+        `SELECT id FROM membership_payments WHERE provider_payment_id = $1`,
+        [providerPaymentId],
+      );
+      if (!dup.length) {
+        await recordRecurringPayment(subscriptionId, { providerPaymentId });
+      }
+    }
+    return sub;
+  }
+
+  if (sub.status !== 'pending_authorization') {
+    throw badRequest('Subscription cannot be activated');
+  }
 
   const { rows: planRows } = await query(`SELECT * FROM membership_plans WHERE id = $1`, [
     sub.plan_id,
@@ -864,8 +883,8 @@ async function activateSubscription(subscriptionId, { preapprovalId } = {}) {
     const { rows: paymentRows } = await client.query(
       `INSERT INTO membership_payments (
         subscription_id, club_member_id, institution_id,
-        status, amount_cents, currency, period_start, period_end
-      ) VALUES ($1, $2, $3, 'approved', $4, $5, $6, $7)
+        status, amount_cents, currency, period_start, period_end, provider_payment_id
+      ) VALUES ($1, $2, $3, 'approved', $4, $5, $6, $7, $8)
       RETURNING *`,
       [
         subscriptionId,
@@ -875,6 +894,7 @@ async function activateSubscription(subscriptionId, { preapprovalId } = {}) {
         plan.price_currency,
         now,
         periodEnd,
+        providerPaymentId || null,
       ],
     );
 
@@ -1129,6 +1149,260 @@ async function getMembershipPaymentById(paymentId) {
   return rows[0];
 }
 
+async function handlePreapprovalAuthorized(subscriptionId, preapprovalId) {
+  const { rows } = await query(`SELECT * FROM membership_subscriptions WHERE id = $1`, [
+    subscriptionId,
+  ]);
+  if (!rows.length) return { processed: false, reason: 'subscription_not_found' };
+  const sub = rows[0];
+
+  if (preapprovalId && sub.mp_preapproval_id !== preapprovalId) {
+    await query(
+      `UPDATE membership_subscriptions SET mp_preapproval_id = $2, updated_at = now() WHERE id = $1`,
+      [subscriptionId, preapprovalId],
+    );
+  }
+
+  if (sub.status === 'active') {
+    return { processed: true, subscriptionId, status: 'already_active' };
+  }
+
+  if (sub.status === 'pending_authorization') {
+    await activateSubscription(subscriptionId, { preapprovalId });
+    return { processed: true, subscriptionId, status: 'activated' };
+  }
+
+  return { processed: false, subscriptionId, reason: 'invalid_status', status: sub.status };
+}
+
+async function handlePreapprovalCancelled(subscriptionId) {
+  const { rows } = await query(
+    `SELECT ms.id, cm.id AS club_member_id
+     FROM membership_subscriptions ms
+     JOIN club_members cm ON cm.id = ms.club_member_id
+     WHERE ms.id = $1`,
+    [subscriptionId],
+  );
+  if (!rows.length) return { processed: false, reason: 'subscription_not_found' };
+
+  await query(
+    `UPDATE membership_subscriptions SET status = 'cancelled', updated_at = now() WHERE id = $1`,
+    [subscriptionId],
+  );
+  await query(`UPDATE club_members SET status = 'inactive', updated_at = now() WHERE id = $1`, [
+    rows[0].club_member_id,
+  ]);
+
+  return { processed: true, subscriptionId, status: 'cancelled' };
+}
+
+async function handleSubscriptionPaymentFailure(subscriptionId) {
+  const { rows } = await query(
+    `SELECT ms.*, cm.user_id, i.name AS institution_name
+     FROM membership_subscriptions ms
+     JOIN club_members cm ON cm.id = ms.club_member_id
+     JOIN institutions i ON i.id = ms.institution_id
+     WHERE ms.id = $1`,
+    [subscriptionId],
+  );
+  if (!rows.length) return;
+  const sub = rows[0];
+
+  const nextRetry = sub.retry_count + 1;
+  const cancelSubscription = nextRetry >= MEMBERSHIP_MAX_PAYMENT_RETRIES;
+
+  await query(
+    `UPDATE club_members SET status = $2, updated_at = now() WHERE id = $1`,
+    [sub.club_member_id, cancelSubscription ? 'inactive' : 'pending_payment'],
+  );
+  await query(
+    `UPDATE membership_subscriptions
+     SET status = $2,
+         last_failure_at = now(),
+         retry_count = retry_count + 1,
+         updated_at = now()
+     WHERE id = $1`,
+    [subscriptionId, cancelSubscription ? 'cancelled' : 'past_due'],
+  );
+
+  if (sub.user_id) {
+    notificationsService
+      .notifyMembershipPaymentFailed({
+        userId: sub.user_id,
+        memberId: sub.club_member_id,
+        institutionName: sub.institution_name,
+      })
+      .catch(() => {});
+  }
+}
+
+async function recordRecurringPayment(
+  subscriptionId,
+  { providerPaymentId, amountCents, currency } = {},
+) {
+  const { rows } = await query(
+    `SELECT ms.*, cm.user_id
+     FROM membership_subscriptions ms
+     JOIN club_members cm ON cm.id = ms.club_member_id
+     WHERE ms.id = $1`,
+    [subscriptionId],
+  );
+  if (!rows.length) throw notFound('Subscription not found');
+  const sub = rows[0];
+
+  if (providerPaymentId) {
+    const { rows: dup } = await query(
+      `SELECT id FROM membership_payments WHERE provider_payment_id = $1`,
+      [providerPaymentId],
+    );
+    if (dup.length) return dup[0];
+  }
+
+  const { rows: planRows } = await query(`SELECT * FROM membership_plans WHERE id = $1`, [
+    sub.plan_id,
+  ]);
+  const plan = planRows[0];
+  const now = new Date();
+  const periodEnd = addBillingPeriod(now, plan.billing_frequency);
+  const cents = amountCents ?? plan.price_cents;
+  const curr = currency ?? plan.price_currency;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: paymentRows } = await client.query(
+      `INSERT INTO membership_payments (
+        subscription_id, club_member_id, institution_id,
+        status, amount_cents, currency, period_start, period_end, provider_payment_id
+      ) VALUES ($1, $2, $3, 'approved', $4, $5, $6, $7, $8)
+      RETURNING *`,
+      [
+        subscriptionId,
+        sub.club_member_id,
+        sub.institution_id,
+        cents,
+        curr,
+        now,
+        periodEnd,
+        providerPaymentId || null,
+      ],
+    );
+
+    await client.query(
+      `UPDATE membership_subscriptions
+       SET status = 'active',
+           last_billed_at = now(),
+           next_billing_at = $2,
+           retry_count = 0,
+           last_failure_at = NULL,
+           updated_at = now()
+       WHERE id = $1`,
+      [subscriptionId, periodEnd],
+    );
+
+    await client.query(
+      `UPDATE club_members SET status = 'active', updated_at = now() WHERE id = $1`,
+      [sub.club_member_id],
+    );
+
+    await client.query('COMMIT');
+
+    if (sub.user_id) {
+      const { rows: ctx } = await query(
+        `SELECT u.email, i.name AS institution_name, mp.name AS plan_name
+         FROM users u
+         JOIN club_members cm ON cm.user_id = u.id
+         JOIN institutions i ON i.id = cm.institution_id
+         JOIN membership_plans mp ON mp.id = cm.plan_id
+         WHERE cm.id = $1`,
+        [sub.club_member_id],
+      );
+      if (ctx.length) {
+        sendMembershipPaymentReceiptEmail({
+          to: ctx[0].email,
+          institutionName: ctx[0].institution_name,
+          planName: ctx[0].plan_name,
+          amountCents: cents,
+          currency: curr,
+        }).catch(() => {});
+        notificationsService
+          .notifyMembershipPaymentConfirmed({
+            userId: sub.user_id,
+            memberId: sub.club_member_id,
+            institutionName: ctx[0].institution_name,
+          })
+          .catch(() => {});
+      }
+    }
+
+    return paymentRows[0];
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function processSubscriptionPayment(
+  subscriptionId,
+  { providerPaymentId, status, amountCents, currency } = {},
+) {
+  const { rows } = await query(`SELECT * FROM membership_subscriptions WHERE id = $1`, [
+    subscriptionId,
+  ]);
+  if (!rows.length) return { processed: false, reason: 'subscription_not_found' };
+  const sub = rows[0];
+
+  if (providerPaymentId) {
+    const { rows: dup } = await query(
+      `SELECT id FROM membership_payments WHERE provider_payment_id = $1`,
+      [providerPaymentId],
+    );
+    if (dup.length) {
+      return { processed: true, subscriptionId, status: 'duplicate', duplicate: true };
+    }
+  }
+
+  if (status !== 'approved') {
+    await handleSubscriptionPaymentFailure(subscriptionId);
+    return { processed: true, subscriptionId, status: status || 'rejected' };
+  }
+
+  if (sub.status === 'pending_authorization') {
+    await activateSubscription(subscriptionId, {
+      preapprovalId: sub.mp_preapproval_id,
+      providerPaymentId,
+    });
+    return { processed: true, subscriptionId, status: 'activated' };
+  }
+
+  if (['active', 'past_due'].includes(sub.status)) {
+    await recordRecurringPayment(subscriptionId, { providerPaymentId, amountCents, currency });
+    return { processed: true, subscriptionId, status: 'recurring_recorded' };
+  }
+
+  return { processed: false, subscriptionId, reason: 'invalid_status', status: sub.status };
+}
+
+async function processSubscriptionPaymentByPreapproval(
+  preapprovalId,
+  { providerPaymentId, status, amountCents, currency } = {},
+) {
+  const { rows } = await query(
+    `SELECT id FROM membership_subscriptions WHERE mp_preapproval_id = $1`,
+    [preapprovalId],
+  );
+  if (!rows.length) return { processed: false, reason: 'subscription_not_found' };
+  return processSubscriptionPayment(rows[0].id, {
+    providerPaymentId,
+    status,
+    amountCents,
+    currency,
+  });
+}
+
 // ─── Scheduler helpers (F-41, F-44) ─────────────────────────────────────────
 
 async function processDueBilling() {
@@ -1148,35 +1422,23 @@ async function processDueBilling() {
   );
 
   for (const sub of rows) {
-    if (sub.mp_preapproval_id && isMercadoPagoConfigured()) {
-      const periodEnd = addBillingPeriod(new Date(), sub.billing_frequency);
-      await query(
-        `UPDATE membership_subscriptions
-         SET next_billing_at = $2, last_billed_at = now(), updated_at = now()
-         WHERE id = $1`,
-        [sub.id, periodEnd],
-      );
+    if (sub.mp_preapproval_id) {
+      // Auto-debit authorized — Mercado Pago (or mock) charges via webhooks.
       continue;
     }
 
-    await query(
-      `UPDATE club_members SET status = 'pending_payment', updated_at = now() WHERE id = $1`,
-      [sub.club_member_id],
-    );
-    await query(
-      `UPDATE membership_subscriptions
-       SET status = 'past_due', last_failure_at = now(), retry_count = retry_count + 1, updated_at = now()
-       WHERE id = $1`,
-      [sub.id],
-    );
+    if (sub.retry_count >= MEMBERSHIP_MAX_PAYMENT_RETRIES) {
+      await query(
+        `UPDATE membership_subscriptions SET status = 'cancelled', updated_at = now() WHERE id = $1`,
+        [sub.id],
+      );
+      await query(`UPDATE club_members SET status = 'inactive', updated_at = now() WHERE id = $1`, [
+        sub.club_member_id,
+      ]);
+      continue;
+    }
 
-    notificationsService
-      .notifyMembershipPaymentFailed({
-        userId: sub.user_id,
-        memberId: sub.club_member_id,
-        institutionName: sub.institution_name,
-      })
-      .catch(() => {});
+    await handleSubscriptionPaymentFailure(sub.id);
   }
 }
 
@@ -1309,11 +1571,17 @@ module.exports = {
   acceptInvite,
   startAuthorization,
   activateSubscription,
+  handlePreapprovalAuthorized,
+  handlePreapprovalCancelled,
+  processSubscriptionPayment,
+  processSubscriptionPaymentByPreapproval,
+  recordRecurringPayment,
   getMyMemberships,
   getStatement,
   payDebt,
   confirmMembershipPayment,
   getMembershipPaymentById,
   runMembershipScheduler,
+  processDueBilling,
   addBillingPeriod,
 };

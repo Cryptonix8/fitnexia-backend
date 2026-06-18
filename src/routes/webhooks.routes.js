@@ -14,6 +14,20 @@ async function handleMercadoPagoNotification(req, res) {
   const queryId = req.query.id || req.query['data.id'];
   const topic = req.query.topic || req.query.type;
 
+  if (
+    queryId &&
+    (topic === 'preapproval' || topic === 'subscription_preapproval' || topic === 'authorized_payment')
+  ) {
+    if (topic === 'authorized_payment') {
+      const result = await paymentsService.processMercadoPagoPaymentId(queryId);
+      res.json(result);
+      return;
+    }
+    const result = await paymentsService.processMercadoPagoPreapprovalId(queryId);
+    res.json(result);
+    return;
+  }
+
   if (queryId && (!topic || topic === 'payment')) {
     const result = await paymentsService.processMercadoPagoPaymentId(queryId);
     res.json(result);
