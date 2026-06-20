@@ -31,4 +31,13 @@ router.get(
   }),
 );
 
+router.post(
+  '/:id/report',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await reviewsService.reportReview(req.user, req.params.id, req.body);
+    res.status(201).json(result);
+  }),
+);
+
 module.exports = router;

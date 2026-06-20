@@ -67,7 +67,7 @@ async function listInstructorReviews(instructorId) {
      FROM reviews r
      JOIN users u ON u.id = r.athlete_user_id
      LEFT JOIN athlete_profiles ap ON ap.user_id = u.id
-     WHERE r.instructor_id = $1
+     WHERE r.instructor_id = $1 AND r.removed_at IS NULL
      ORDER BY r.created_at DESC`,
     [instructorId],
   );
@@ -79,6 +79,33 @@ async function listInstructorReviews(instructorId) {
     authorName: [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Athlete',
     createdAt: r.created_at.toISOString(),
   }));
+}
+
+async function reportReview(user, reviewId, body) {
+  const id = String(reviewId ?? '').trim();
+  if (!id) {
+    throw badRequest('Review id is required');
+  }
+
+  const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
+
+  const { rows } = await query(
+    `SELECT id FROM reviews WHERE id = $1 AND removed_at IS NULL`,
+    [id],
+  );
+  if (!rows.length) {
+    throw notFound('Review not found');
+  }
+
+  await query(
+    `INSERT INTO review_reports (review_id, reporter_user_id, reason)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (review_id, reporter_user_id)
+     DO UPDATE SET reason = EXCLUDED.reason, created_at = now()`,
+    [id, user.id, reason || null],
+  );
+
+  return { ok: true };
 }
 
 async function createStaffReview(user, body) {
@@ -146,4 +173,5 @@ module.exports = {
   listInstructorReviews,
   createStaffReview,
   listStaffReviewsForInstructor,
+  reportReview,
 };

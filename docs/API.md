@@ -591,6 +591,7 @@ Requires `role: admin` (web panel primary).
 | GET | `/admin/users` |
 | GET | `/admin/users/{id}` |
 | PATCH | `/admin/users/{id}` |
+| DELETE | `/admin/users/{id}` |
 | GET | `/admin/verification-requests` |
 | POST | `/admin/verification-requests/{id}/approve` |
 | POST | `/admin/verification-requests/{id}/reject` |

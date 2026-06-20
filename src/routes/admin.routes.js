@@ -23,11 +23,43 @@ router.get(
   }),
 );
 
+router.patch(
+  '/users/:id',
+  asyncHandler(async (req, res) => {
+    const user = await adminService.updateUser(req.params.id, req.body);
+    res.json(user);
+  }),
+);
+
+router.delete(
+  '/users/:id',
+  asyncHandler(async (req, res) => {
+    const result = await adminService.deleteUser(req.user.id, req.params.id);
+    res.json(result);
+  }),
+);
+
 router.get(
   '/verification-requests',
   asyncHandler(async (req, res) => {
     const data = await adminService.listVerificationRequests();
     res.json({ data });
+  }),
+);
+
+router.get(
+  '/reviews/reported',
+  asyncHandler(async (req, res) => {
+    const data = await adminService.listReportedReviews();
+    res.json({ data });
+  }),
+);
+
+router.post(
+  '/reviews/:id/remove',
+  asyncHandler(async (req, res) => {
+    const result = await adminService.removeReview(req.user.id, req.params.id, req.body);
+    res.json(result);
   }),
 );
 

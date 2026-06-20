@@ -362,8 +362,26 @@ CREATE TABLE IF NOT EXISTS reviews (
   athlete_user_id UUID NOT NULL REFERENCES users(id),
   rating          SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
   comment         TEXT,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  removed_at      TIMESTAMPTZ,
+  removed_by      UUID REFERENCES users(id),
+  removed_reason  TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_reviews_instructor_created
+  ON reviews(instructor_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS review_reports (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  review_id          UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+  reporter_user_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reason             TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (review_id, reporter_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_reports_review
+  ON review_reports(review_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS staff_reviews (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
