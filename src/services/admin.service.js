@@ -97,6 +97,56 @@ async function getUser(id) {
   return serializeAdminUser(rows[0]);
 }
 
+function parseDisplayName(displayName) {
+  const name = typeof displayName === 'string' ? displayName.trim() : '';
+  if (!name) {
+    throw badRequest('Display name cannot be empty');
+  }
+  return name;
+}
+
+async function updateUserDisplayName(userId, role, displayName) {
+  const name = parseDisplayName(displayName);
+
+  if (role === 'athlete') {
+    const parts = name.split(/\s+/);
+    const firstName = parts[0];
+    const lastName = parts.slice(1).join(' ');
+    const { rowCount } = await query(
+      `UPDATE athlete_profiles
+       SET first_name = $1, last_name = $2
+       WHERE user_id = $3`,
+      [firstName, lastName, userId],
+    );
+    if (!rowCount) throw badRequest('Athlete profile not found');
+    return;
+  }
+
+  if (role === 'instructor') {
+    const { rowCount } = await query(
+      `UPDATE instructors
+       SET display_name = $1, updated_at = now()
+       WHERE user_id = $2`,
+      [name, userId],
+    );
+    if (!rowCount) throw badRequest('Instructor profile not found');
+    return;
+  }
+
+  if (role === 'institution') {
+    const { rowCount } = await query(
+      `UPDATE institutions
+       SET name = $1, updated_at = now()
+       WHERE user_id = $2`,
+      [name, userId],
+    );
+    if (!rowCount) throw badRequest('Institution profile not found');
+    return;
+  }
+
+  throw badRequest('Display name cannot be updated for admin accounts');
+}
+
 async function updateUser(id, body) {
   const { rows: existing } = await query(
     `SELECT id, email, role FROM users WHERE id = $1 AND deleted_at IS NULL`,
@@ -140,22 +190,34 @@ async function updateUser(id, body) {
     sets.push(`email = $${values.length}`);
   }
 
-  if (!sets.length) {
+  const hasDisplayNameUpdate = body?.displayName !== undefined;
+
+  if (!sets.length && !hasDisplayNameUpdate) {
     throw badRequest('Nothing to update');
   }
 
-  values.push(id);
-  const idIdx = values.length;
+  let updatedRole = existing[0].role;
 
-  const { rows } = await query(
-    `UPDATE users
-     SET ${sets.join(', ')}, updated_at = now()
-     WHERE id = $${idIdx} AND deleted_at IS NULL
-     RETURNING id, email, role, created_at`,
-    values,
-  );
+  if (sets.length) {
+    values.push(id);
+    const idIdx = values.length;
 
-  return getUser(rows[0].id);
+    const { rows } = await query(
+      `UPDATE users
+       SET ${sets.join(', ')}, updated_at = now()
+       WHERE id = $${idIdx} AND deleted_at IS NULL
+       RETURNING id, email, role, created_at`,
+      values,
+    );
+
+    updatedRole = rows[0].role;
+  }
+
+  if (hasDisplayNameUpdate) {
+    await updateUserDisplayName(id, updatedRole, body.displayName);
+  }
+
+  return getUser(id);
 }
 
 async function deleteUser(adminId, id) {
