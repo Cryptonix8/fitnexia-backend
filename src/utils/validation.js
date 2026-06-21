@@ -349,10 +349,32 @@ function validateInstitutionProfile(updates) {
 }
 
 function validateUserAccountUpdate(body) {
-  const { email } = body ?? {};
-  const errors = collectErrors([() => validateEmailField(email)]);
+  const { email, currentPassword, newPassword } = body ?? {};
+  const hasEmail = email !== undefined && email !== null && String(email).trim() !== '';
+  const hasPassword =
+    newPassword !== undefined && newPassword !== null && String(newPassword).trim() !== '';
+
+  if (!hasEmail && !hasPassword) {
+    failIfErrors([{ field: 'body', message: 'Nothing to update' }]);
+  }
+
+  const errors = collectErrors([
+    () => (hasEmail ? validateEmailField(email) : null),
+    () => (hasPassword ? validatePasswordField(newPassword) : null),
+    () => {
+      if (hasPassword && (!currentPassword || typeof currentPassword !== 'string')) {
+        return { field: 'currentPassword', message: 'Current password is required' };
+      }
+      return null;
+    },
+  ]);
   failIfErrors(errors);
-  return { email: trim(email).toLowerCase() };
+
+  return {
+    email: hasEmail ? trim(email).toLowerCase() : undefined,
+    currentPassword: hasPassword ? currentPassword : undefined,
+    newPassword: hasPassword ? newPassword : undefined,
+  };
 }
 
 function validateResetPassword(body) {

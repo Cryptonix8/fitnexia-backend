@@ -2,35 +2,68 @@ const { query } = require('../db/pool');
 const { badRequest, notFound, forbidden, conflict } = require('../utils/errors');
 const { validateAthleteProfile, validateUserAccountUpdate } = require('../utils/validation');
 const { serializeAthleteProfile, serializeUser } = require('../utils/serializers');
+const { verifyPassword, hashPassword } = require('../utils/password');
 
 async function updateUserAccount(userId, updates) {
-  const { email } = validateUserAccountUpdate(updates);
+  const { email, currentPassword, newPassword } = validateUserAccountUpdate(updates);
 
   const { rows: current } = await query(
-    `SELECT id, email, role FROM users WHERE id = $1 AND deleted_at IS NULL`,
+    `SELECT id, email, role, password_hash FROM users WHERE id = $1 AND deleted_at IS NULL`,
     [userId],
   );
   if (!current.length) throw notFound('User not found');
 
-  if (current[0].email.toLowerCase() === email) {
-    return serializeUser(current[0]);
+  let nextEmail = current[0].email;
+  let emailChanged = false;
+
+  if (email !== undefined) {
+    if (current[0].email.toLowerCase() !== email) {
+      const { rows: taken } = await query(
+        `SELECT id FROM users WHERE email = $1 AND id != $2 AND deleted_at IS NULL`,
+        [email, userId],
+      );
+      if (taken.length) {
+        throw conflict('EMAIL_EXISTS', 'Email already registered');
+      }
+      nextEmail = email;
+      emailChanged = true;
+    }
   }
 
-  const { rows: taken } = await query(
-    `SELECT id FROM users WHERE email = $1 AND id != $2 AND deleted_at IS NULL`,
-    [email, userId],
-  );
-  if (taken.length) {
-    throw conflict('EMAIL_EXISTS', 'Email already registered');
+  let passwordHash = current[0].password_hash;
+
+  if (newPassword !== undefined) {
+    if (!current[0].password_hash) {
+      throw badRequest('Password cannot be changed for this account');
+    }
+    const valid = await verifyPassword(currentPassword, current[0].password_hash);
+    if (!valid) {
+      throw forbidden('Current password is incorrect');
+    }
+    passwordHash = await hashPassword(newPassword);
+  }
+
+  if (!emailChanged && newPassword === undefined) {
+    return serializeUser(current[0]);
   }
 
   const { rows } = await query(
     `UPDATE users
-     SET email = $1, email_verified = FALSE, updated_at = now()
-     WHERE id = $2 AND deleted_at IS NULL
+     SET email = $1,
+         password_hash = $2,
+         email_verified = CASE WHEN $3 THEN FALSE ELSE email_verified END,
+         updated_at = now()
+     WHERE id = $4 AND deleted_at IS NULL
      RETURNING id, email, role`,
-    [email, userId],
+    [nextEmail, passwordHash, emailChanged, userId],
   );
+
+  if (newPassword !== undefined) {
+    await query(
+      `UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
+      [userId],
+    );
+  }
 
   return serializeUser(rows[0]);
 }

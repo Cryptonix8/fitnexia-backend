@@ -7,8 +7,8 @@ const {
   hashToken,
   verifyRefreshToken,
 } = require('../utils/jwt');
-const { AppError, badRequest, conflict, unauthorized, notFound } = require('../utils/errors');
-const { validateRegister, validateLogin, validateResetPassword } = require('../utils/validation');
+const { AppError, badRequest, conflict, unauthorized, notFound, forbidden } = require('../utils/errors');
+const { validateRegister, validateLogin, validateResetPassword, validatePasswordField } = require('../utils/validation');
 const { verifyGoogleIdToken, parseGoogleProfile } = require('../utils/google');
 const { jwtAccessExpiresIn, appDeepLinkScheme, passwordResetExpiresMinutes, isDev, apiPublicUrl } = require('../config/env');
 const { sendPasswordResetEmail } = require('./email.service');
@@ -406,6 +406,46 @@ async function getMe(userId) {
   return { user: serializeUser(user), profile };
 }
 
+async function changePassword(userId, body) {
+  const currentPassword = body?.currentPassword;
+  const newPassword = body?.newPassword;
+
+  if (!currentPassword || typeof currentPassword !== 'string') {
+    throw badRequest('Current password is required');
+  }
+
+  const passwordError = validatePasswordField(newPassword);
+  if (passwordError) {
+    throw badRequest(passwordError.message);
+  }
+
+  const { rows } = await query(
+    `SELECT id, password_hash FROM users WHERE id = $1 AND deleted_at IS NULL`,
+    [userId],
+  );
+  if (!rows.length) throw notFound('User not found');
+  if (!rows[0].password_hash) {
+    throw badRequest('Password cannot be changed for this account');
+  }
+
+  const valid = await verifyPassword(currentPassword, rows[0].password_hash);
+  if (!valid) {
+    throw forbidden('Current password is incorrect');
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+  await query(
+    `UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2 AND deleted_at IS NULL`,
+    [passwordHash, userId],
+  );
+  await query(
+    `UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
+    [userId],
+  );
+
+  return { ok: true };
+}
+
 async function forgotPassword(email) {
   const normalized = String(email ?? '')
     .trim()
@@ -520,6 +560,7 @@ module.exports = {
   refresh,
   logout,
   getMe,
+  changePassword,
   forgotPassword,
   resetPassword,
   loadInstructorExtras,

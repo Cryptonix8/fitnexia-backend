@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const asyncHandler = require('../utils/asyncHandler');
+const { requireAuth } = require('../middleware/auth');
 const authService = require('../services/auth.service');
 const { renderPasswordResetOpenPage } = require('../services/email.service');
 const {
@@ -49,6 +50,15 @@ router.post(
   asyncHandler(async (req, res) => {
     await authService.logout(req.body.refreshToken);
     res.status(204).send();
+  }),
+);
+
+router.post(
+  '/change-password',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await authService.changePassword(req.user.id, req.body);
+    res.json(result);
   }),
 );
 
