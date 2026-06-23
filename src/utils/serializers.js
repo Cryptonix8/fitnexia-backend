@@ -134,8 +134,13 @@ async function serializeInstitutionFull(row, gallery = [], instructors = []) {
     description: row.description || '',
     verified: row.verified,
     plan: row.plan,
+    saasTier: row.saas_tier || 'basic',
     gallery,
     instructors,
+    contactPhone: row.contact_phone || undefined,
+    contactEmail: row.contact_email || undefined,
+    website: row.website || undefined,
+    openingHours: row.opening_hours || {},
   };
 
   if (row.address || row.city || row.country || row.lat != null) {

@@ -10,6 +10,7 @@
     "db:migrate-passes": "node scripts/migrate-athlete-passes.js",
     "db:migrate-marketplace": "node scripts/migrate-mp-marketplace.js",
     "db:migrate-disciplines": "node scripts/migrate-disciplines.js",
+    "db:migrate-gym-mvp": "node scripts/migrate-gym-mvp.js",
     "test:members-f39": "node scripts/test-members-f39.js",
     "test:plans-f40": "node scripts/test-plans-f40.js",
     "test:billing-f41": "node scripts/test-billing-f41.js",

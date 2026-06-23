@@ -1,6 +1,7 @@
 const DISCIPLINES = require('../config/disciplines').DISCIPLINES;
 
 const { getPlans: getPlansFromConfig } = require('../config/plans');
+const { listTierCatalog } = require('./gym-subscription.service');
 
 const { defaultCurrency } = require('../config/env');
 const paymentsService = require('./payments.service');
@@ -39,4 +40,8 @@ function getPaymentsConfig() {
   };
 }
 
-module.exports = { getDisciplines, getPlans, getAppConfig, getPaymentsConfig };
+function getGymTiers() {
+  return listTierCatalog();
+}
+
+module.exports = { getDisciplines, getPlans, getGymTiers, getAppConfig, getPaymentsConfig };

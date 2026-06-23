@@ -67,6 +67,17 @@ router.post(
 );
 
 router.get(
+  '/me/job-applications',
+  requireAuth,
+  requireRole('instructor'),
+  asyncHandler(async (req, res) => {
+    const jobPostingsService = require('../services/job-postings.service');
+    const data = await jobPostingsService.listMyApplications(req.user.id);
+    res.json({ data });
+  }),
+);
+
+router.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const instructor = await instructorsService.getInstructorById(req.params.id);

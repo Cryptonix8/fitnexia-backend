@@ -36,6 +36,10 @@ async function updateInstitutionMe(userId, updates) {
     country: 'country',
     lat: 'lat',
     lng: 'lng',
+    contactPhone: 'contact_phone',
+    contactEmail: 'contact_email',
+    website: 'website',
+    openingHours: 'opening_hours',
   };
 
   const sets = [];
@@ -45,7 +49,9 @@ async function updateInstitutionMe(userId, updates) {
   for (const [key, col] of Object.entries(fieldMap)) {
     if (validated[key] !== undefined) {
       sets.push(`${col} = $${i++}`);
-      values.push(validated[key]);
+      values.push(
+        key === 'openingHours' ? JSON.stringify(validated[key]) : validated[key],
+      );
     }
   }
 

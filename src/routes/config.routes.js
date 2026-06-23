@@ -100,6 +100,13 @@ configRouter.get(
 );
 
 configRouter.get(
+  '/gym-tiers',
+  asyncHandler(async (req, res) => {
+    res.json({ data: configService.getGymTiers() });
+  }),
+);
+
+configRouter.get(
   '/pass-products',
   asyncHandler(async (req, res) => {
     res.json({ data: passesService.getPassProducts() });

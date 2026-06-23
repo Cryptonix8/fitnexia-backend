@@ -84,6 +84,25 @@ router.post(
 );
 
 router.get(
+  '/institutions',
+  asyncHandler(async (req, res) => {
+    const result = await adminService.listInstitutions(req.query);
+    res.json(result);
+  }),
+);
+
+router.patch(
+  '/institutions/:id/tier',
+  asyncHandler(async (req, res) => {
+    const subscription = await adminService.updateInstitutionTier(
+      req.params.id,
+      req.body.saasTier,
+    );
+    res.json(subscription);
+  }),
+);
+
+router.get(
   '/metrics/overview',
   asyncHandler(async (req, res) => {
     const metrics = await adminService.metricsOverview();

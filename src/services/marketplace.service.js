@@ -1,6 +1,6 @@
 const { query } = require('../db/pool');
 const { badRequest, conflict, notFound } = require('../utils/errors');
-const { getCommissionPercent } = require('../config/plans');
+const { getCommissionPercent, getInstitutionCommissionPercent } = require('../config/plans');
 const {
   isMarketplaceEnabled,
   requireSellerConnect,
@@ -8,12 +8,15 @@ const {
   getPassRevenuePolicy,
 } = require('../config/marketplace.config');
 
-function getCommissionRate(plan) {
+function getCommissionRate(plan, sellerType, institutionRow) {
+  if (sellerType === 'institution' && institutionRow) {
+    return getInstitutionCommissionPercent(institutionRow) / 100;
+  }
   return getCommissionPercent(plan) / 100;
 }
 
-function computeSplitAmounts(grossCents, plan) {
-  const commissionRate = getCommissionRate(plan);
+function computeSplitAmounts(grossCents, plan, sellerType, institutionRow) {
+  const commissionRate = getCommissionRate(plan, sellerType, institutionRow);
   const platformFeeCents = Math.round(grossCents * commissionRate);
   const sellerNetCents = grossCents - platformFeeCents;
   return { platformFeeCents, sellerNetCents, commissionRate };
@@ -43,6 +46,7 @@ async function resolvePayeeForClass(classRow) {
       sellerType: 'institution',
       seller: institution,
       plan: institution.plan,
+      institution,
     };
   }
 
@@ -51,6 +55,7 @@ async function resolvePayeeForClass(classRow) {
       sellerType: 'instructor',
       seller: instructor,
       plan: instructor.plan,
+      institution,
     };
   }
 
@@ -93,7 +98,12 @@ async function resolveCheckoutSplit(classRow, grossCents, { isPassPurchase = fal
   const payee = await resolvePayeeForClass(classRow);
   assertSellerConnected(payee);
 
-  const { platformFeeCents, sellerNetCents } = computeSplitAmounts(grossCents, payee.plan);
+  const { platformFeeCents, sellerNetCents } = computeSplitAmounts(
+    grossCents,
+    payee.plan,
+    payee.sellerType,
+    payee.institution,
+  );
 
   return {
     splitMode: 'marketplace',
@@ -139,6 +149,8 @@ async function recordPassBookingLedger(bookingRow, classRow) {
   const { platformFeeCents, sellerNetCents } = computeSplitAmounts(
     bookingRow.price_cents,
     payee.plan,
+    payee.sellerType,
+    payee.institution,
   );
 
   const { rows } = await query(

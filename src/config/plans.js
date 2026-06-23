@@ -23,4 +23,15 @@ function getCommissionPercent(plan) {
   return match?.commissionPercent ?? getBasicCommissionPercent();
 }
 
-module.exports = { PLANS, getPlans, getCommissionPercent };
+/** Gyms on SaaS tiers pay no transaction commission to Fitnexia. */
+function getInstitutionCommissionPercent(institutionRow) {
+  if (institutionRow?.saas_tier) return 0;
+  return getCommissionPercent(institutionRow?.plan || 'institutional');
+}
+
+module.exports = {
+  PLANS,
+  getPlans,
+  getCommissionPercent,
+  getInstitutionCommissionPercent,
+};

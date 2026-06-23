@@ -375,6 +375,54 @@ async function removeReview(adminId, reviewId, body) {
   return { id: rows[0].id, status: 'removed' };
 }
 
+async function listInstitutions(queryParams = {}) {
+  const { page, limit, offset } = parsePagination(queryParams);
+  const search = typeof queryParams.q === 'string' ? queryParams.q.trim() : '';
+
+  const conditions = [];
+  const values = [];
+  if (search) {
+    values.push(`%${search}%`);
+    conditions.push(`i.name ILIKE $${values.length}`);
+  }
+  const whereSql = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const { rows: countRows } = await query(
+    `SELECT COUNT(*)::int AS total FROM institutions i ${whereSql}`,
+    values,
+  );
+
+  const listValues = [...values, limit, offset];
+  const { rows } = await query(
+    `SELECT i.id, i.name, i.saas_tier, i.verified, i.created_at, u.email AS owner_email,
+            (SELECT COUNT(*)::int FROM club_members cm
+             WHERE cm.institution_id = i.id AND cm.left_at IS NULL AND cm.status != 'inactive') AS member_count
+     FROM institutions i
+     JOIN users u ON u.id = i.user_id
+     ${whereSql}
+     ORDER BY i.created_at DESC
+     LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
+    listValues,
+  );
+
+  const data = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    saasTier: row.saas_tier,
+    verified: row.verified,
+    memberCount: row.member_count,
+    ownerEmail: row.owner_email,
+    createdAt: row.created_at.toISOString(),
+  }));
+
+  return paginatedResponse(data, countRows[0].total, page, limit);
+}
+
+async function updateInstitutionTier(institutionId, saasTier) {
+  const gymSubscriptionService = require('./gym-subscription.service');
+  return gymSubscriptionService.updateTierByInstitutionId(institutionId, saasTier);
+}
+
 module.exports = {
   listUsers,
   getUser,
@@ -386,4 +434,6 @@ module.exports = {
   metricsOverview,
   listReportedReviews,
   removeReview,
+  listInstitutions,
+  updateInstitutionTier,
 };

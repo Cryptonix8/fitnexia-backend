@@ -135,6 +135,111 @@ router.post(
 );
 
 const membershipsService = require('../services/memberships.service');
+const gymSubscriptionService = require('../services/gym-subscription.service');
+const jobPostingsService = require('../services/job-postings.service');
+
+router.get(
+  '/me/subscription',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const subscription = await gymSubscriptionService.getSubscriptionForUser(req.user.id);
+    res.json(subscription);
+  }),
+);
+
+router.patch(
+  '/me/subscription',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const subscription = await gymSubscriptionService.updateTierForUser(
+      req.user.id,
+      req.body.tier,
+    );
+    res.json(subscription);
+  }),
+);
+
+router.get(
+  '/me/jobs',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const data = await jobPostingsService.listJobsForInstitution(req.user.id);
+    res.json({ data });
+  }),
+);
+
+router.post(
+  '/me/jobs',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const job = await jobPostingsService.createJob(req.user.id, req.body);
+    res.status(201).json(job);
+  }),
+);
+
+router.get(
+  '/me/jobs/:id',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const job = await jobPostingsService.getJobForInstitution(req.user.id, req.params.id);
+    res.json(job);
+  }),
+);
+
+router.patch(
+  '/me/jobs/:id',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const job = await jobPostingsService.updateJob(req.user.id, req.params.id, req.body);
+    res.json(job);
+  }),
+);
+
+router.delete(
+  '/me/jobs/:id',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    await jobPostingsService.deleteJob(req.user.id, req.params.id);
+    res.status(204).send();
+  }),
+);
+
+router.get(
+  '/me/jobs/:id/applications',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const data = await jobPostingsService.listApplicationsForJob(req.user.id, req.params.id);
+    res.json({ data });
+  }),
+);
+
+router.post(
+  '/me/members/:id/mark-paid',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const member = await membershipsService.recordManualPayment(req.user.id, req.params.id);
+    res.json(member);
+  }),
+);
+
+router.post(
+  '/me/members/:id/mark-pending',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const member = await membershipsService.markMemberPending(req.user.id, req.params.id);
+    res.json(member);
+  }),
+);
 
 router.get(
   '/me/membership-plans',

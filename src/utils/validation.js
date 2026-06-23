@@ -308,6 +308,32 @@ function validateInstructorProfile(updates) {
   };
 }
 
+const OPENING_HOUR_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function validateOpeningHours(openingHours) {
+  if (openingHours === undefined || openingHours === null) return null;
+  if (typeof openingHours !== 'object' || Array.isArray(openingHours)) {
+    return { field: 'openingHours', message: 'openingHours must be an object' };
+  }
+  for (const [day, value] of Object.entries(openingHours)) {
+    if (!OPENING_HOUR_DAYS.includes(day)) {
+      return { field: 'openingHours', message: `Invalid day: ${day}` };
+    }
+    if (value == null || typeof value !== 'object') {
+      return { field: 'openingHours', message: `Invalid hours for ${day}` };
+    }
+    if (value.closed === true) continue;
+    if (value.open && !TIME_RE.test(String(value.open))) {
+      return { field: 'openingHours', message: `Invalid open time for ${day}` };
+    }
+    if (value.close && !TIME_RE.test(String(value.close))) {
+      return { field: 'openingHours', message: `Invalid close time for ${day}` };
+    }
+  }
+  return null;
+}
+
 function validateInstitutionProfile(updates) {
   const errors = collectErrors([
     () => (updates.name !== undefined ? validateInstitutionName(updates.name, { required: true }) : null),
@@ -317,6 +343,12 @@ function validateInstitutionProfile(updates) {
     () => validateOptionalText(updates.city, 'city', LIMITS.city),
     () => validateCountry(updates.country),
     () => validateGallery(updates.gallery),
+    () => validateOptionalText(updates.contactPhone, 'contactPhone', 30),
+    () => (updates.contactEmail !== undefined && updates.contactEmail !== ''
+      ? validateEmailField(updates.contactEmail)
+      : null),
+    () => validateOptionalUrl(updates.website, 'website'),
+    () => validateOpeningHours(updates.openingHours),
   ]);
 
   if (updates.location) {
@@ -345,7 +377,96 @@ function validateInstitutionProfile(updates) {
       country: trim(updates.location.country).toUpperCase(),
     };
   }
+  if (updates.contactPhone !== undefined) normalized.contactPhone = trim(updates.contactPhone) || null;
+  if (updates.contactEmail !== undefined) {
+    normalized.contactEmail = trim(updates.contactEmail).toLowerCase() || null;
+  }
+  if (updates.website !== undefined) normalized.website = trim(updates.website) || null;
+  if (updates.openingHours !== undefined) normalized.openingHours = updates.openingHours;
   return normalized;
+}
+
+const JOB_ROLE_TYPES = ['instructor', 'trainer', 'staff'];
+const JOB_STATUSES = ['draft', 'open', 'closed'];
+
+function validateJobPosting(body, { partial = false } = {}) {
+  const { title, roleType, description, disciplines, status, expiresAt } = body ?? {};
+  const errors = collectErrors([
+    () => {
+      if (partial && title === undefined) return null;
+      if (!title || typeof title !== 'string' || !trim(title)) {
+        return { field: 'title', message: 'title is required' };
+      }
+      if (trim(title).length > 120) {
+        return { field: 'title', message: 'title is too long' };
+      }
+      return null;
+    },
+    () => {
+      if (roleType === undefined) return null;
+      if (!JOB_ROLE_TYPES.includes(roleType)) {
+        return { field: 'roleType', message: 'Invalid roleType' };
+      }
+      return null;
+    },
+    () => validateOptionalText(description, 'description', LIMITS.description),
+    () => {
+      if (disciplines === undefined) return null;
+      if (!Array.isArray(disciplines)) {
+        return { field: 'disciplines', message: 'disciplines must be an array' };
+      }
+      return null;
+    },
+    () => {
+      if (status === undefined) return null;
+      if (!JOB_STATUSES.includes(status)) {
+        return { field: 'status', message: 'Invalid status' };
+      }
+      return null;
+    },
+    () => {
+      if (expiresAt === undefined || expiresAt === null || expiresAt === '') return null;
+      const d = new Date(expiresAt);
+      if (Number.isNaN(d.getTime())) {
+        return { field: 'expiresAt', message: 'expiresAt must be a valid date' };
+      }
+      return null;
+    },
+  ]);
+
+  if (!partial && !title) {
+    throw badRequest('title is required');
+  }
+
+  failIfErrors(errors.filter(Boolean));
+
+  const normalized = {};
+  if (title !== undefined) normalized.title = trim(title);
+  if (roleType !== undefined) normalized.roleType = roleType;
+  if (description !== undefined) normalized.description = trim(description) || '';
+  if (disciplines !== undefined) {
+    normalized.disciplines = disciplines.map((d) => trim(String(d))).filter(Boolean);
+  }
+  if (status !== undefined) normalized.status = status;
+  if (expiresAt !== undefined) {
+    normalized.expiresAt = expiresAt ? new Date(expiresAt) : null;
+  }
+  if (!partial) {
+    normalized.roleType = normalized.roleType || 'instructor';
+    normalized.description = normalized.description ?? '';
+    normalized.disciplines = normalized.disciplines ?? [];
+    normalized.status = normalized.status || 'open';
+  }
+  return normalized;
+}
+
+function validateJobApplication(body) {
+  const { message } = body ?? {};
+  const errors = collectErrors([
+    () => validateOptionalText(message, 'message', LIMITS.description),
+  ]);
+  failIfErrors(errors.filter(Boolean));
+  return { message: message ? trim(message) : '' };
 }
 
 function validateUserAccountUpdate(body) {
@@ -590,4 +711,6 @@ module.exports = {
   validateMembershipInvite,
   validateAddMember,
   validateUpdateMember,
+  validateJobPosting,
+  validateJobApplication,
 };

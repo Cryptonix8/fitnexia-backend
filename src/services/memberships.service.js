@@ -28,6 +28,7 @@ const {
   sendMembershipArrearsAlertEmail,
 } = require('./email.service');
 const notificationsService = require('./notifications.service');
+const gymSubscriptionService = require('./gym-subscription.service');
 
 function isPaymentsActive() {
   return paymentsEnabled && (isMercadoPagoConfigured() || useMockPayments());
@@ -478,6 +479,9 @@ async function bulkCreateInvites(userId, body) {
   }
   if (members.length > 500) throw badRequest('Maximum 500 members per bulk upload');
 
+  const institution = await institutionsService.getInstitutionByUserId(userId);
+  await gymSubscriptionService.assertCanAddMembers(institution.id, members.length);
+
   const batchId = crypto.randomUUID();
   const results = [];
   for (const row of members) {
@@ -602,6 +606,8 @@ async function addMember(userId, body) {
   const validated = validateAddMember(body);
   const institution = await institutionsService.getInstitutionByUserId(userId);
   const plan = await getPlanForInstitution(institution.id, validated.planId);
+
+  await gymSubscriptionService.assertCanAddMembers(institution.id, 1);
 
   let memberUserId = validated.userId;
   if (!memberUserId && validated.contactEmail) {
@@ -814,6 +820,8 @@ async function acceptInvite(user, code) {
     [invite.institution_id, user.id],
   );
   if (existing.length) throw conflict('ALREADY_MEMBER', 'You are already a member of this club');
+
+  await gymSubscriptionService.assertCanAddMembers(invite.institution_id, 1);
 
   const client = await pool.connect();
   try {
@@ -1748,6 +1756,98 @@ async function runMembershipScheduler() {
   await processClubArrearsAlerts();
 }
 
+async function recordManualPayment(userId, memberId) {
+  const institution = await institutionsService.getInstitutionByUserId(userId);
+  const member = await getMemberForInstitution(institution.id, memberId);
+
+  const { rows: subRows } = await query(
+    `SELECT * FROM membership_subscriptions WHERE club_member_id = $1`,
+    [memberId],
+  );
+  if (!subRows.length) {
+    await ensureSubscriptionForMember(member);
+  }
+
+  const { rows: subs } = await query(
+    `SELECT * FROM membership_subscriptions WHERE club_member_id = $1`,
+    [memberId],
+  );
+  const sub = subs[0];
+  if (!sub) throw badRequest('No subscription found for this member');
+
+  const { rows: planRows } = await query(`SELECT * FROM membership_plans WHERE id = $1`, [
+    member.plan_id,
+  ]);
+  const plan = planRows[0];
+  const now = new Date();
+  const periodEnd = addBillingPeriod(now, plan.billing_frequency);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    await client.query(
+      `INSERT INTO membership_payments (
+        subscription_id, club_member_id, institution_id,
+        status, amount_cents, currency, period_start, period_end, is_manual
+      ) VALUES ($1, $2, $3, 'approved', $4, $5, $6, $7, TRUE)`,
+      [
+        sub.id,
+        memberId,
+        institution.id,
+        plan.price_cents,
+        plan.price_currency,
+        now,
+        periodEnd,
+      ],
+    );
+
+    await client.query(
+      `UPDATE membership_subscriptions
+       SET status = 'active',
+           last_billed_at = now(),
+           next_billing_at = $2,
+           retry_count = 0,
+           last_failure_at = NULL,
+           updated_at = now()
+       WHERE id = $1`,
+      [sub.id, periodEnd],
+    );
+
+    await client.query(
+      `UPDATE club_members SET status = 'active', updated_at = now() WHERE id = $1`,
+      [memberId],
+    );
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return getMember(userId, memberId);
+}
+
+async function markMemberPending(userId, memberId) {
+  const institution = await institutionsService.getInstitutionByUserId(userId);
+  await getMemberForInstitution(institution.id, memberId);
+
+  await query(
+    `UPDATE club_members SET status = 'pending_payment', updated_at = now() WHERE id = $1`,
+    [memberId],
+  );
+  await query(
+    `UPDATE membership_subscriptions
+     SET status = 'past_due', updated_at = now()
+     WHERE club_member_id = $1`,
+    [memberId],
+  );
+
+  return getMember(userId, memberId);
+}
+
 module.exports = {
   listPlans,
   getPlan,
@@ -1785,4 +1885,6 @@ module.exports = {
   runMembershipScheduler,
   processDueBilling,
   addBillingPeriod,
+  recordManualPayment,
+  markMemberPending,
 };
