@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { pool } = require('./pool');
+const { seedDefaultAdmin } = require('./seed-admin');
 
 async function migrate() {
   const schemaPath = path.join(__dirname, 'schema.sql');
@@ -18,6 +19,14 @@ async function migrate() {
     process.exit(1);
   } finally {
     client.release();
+  }
+
+  try {
+    await seedDefaultAdmin();
+  } catch (err) {
+    console.error('Admin seed failed:', err.message);
+    process.exit(1);
+  } finally {
     await pool.end();
   }
 }

@@ -7,6 +7,8 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "db:migrate": "node src/db/migrate.js",
+    "db:seed": "node scripts/seed-admin.js",
+    "db:init": "node src/db/migrate.js",
     "db:migrate-passes": "node scripts/migrate-athlete-passes.js",
     "db:migrate-marketplace": "node scripts/migrate-mp-marketplace.js",
     "db:migrate-disciplines": "node scripts/migrate-disciplines.js",

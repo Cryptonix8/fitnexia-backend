@@ -5,10 +5,23 @@ Node.js + Express + PostgreSQL backend for the Fitnexia mobile app.
 ## Setup
 
 ```bash
-cd backend
+cd fitnexia-backend
 npm install
-npm run db:migrate
+npm run db:init
 npm run dev
+```
+
+`db:init` (alias for `db:migrate`) applies the full schema and seeds a default admin:
+
+- **Email:** `admin@fitnexia.com`
+- **Password:** `admin123`
+
+Override with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` in `.env`. Re-run `npm run db:seed` anytime to create the admin if missing.
+
+Upgrading an older database that predates gym job postings:
+
+```bash
+npm run db:migrate-gym-mvp
 ```
 
 API base: **http://localhost:3000/v1**
