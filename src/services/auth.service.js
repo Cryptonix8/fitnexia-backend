@@ -95,6 +95,16 @@ async function createTokens(client, user) {
   };
 }
 
+/** Hard-delete a soft-deleted user so their email can be registered again. */
+async function reclaimEmailIfSoftDeleted(client, email) {
+  const { rows } = await client.query(
+    `SELECT id FROM users WHERE email = $1 AND deleted_at IS NOT NULL`,
+    [email],
+  );
+  if (!rows.length) return;
+  await client.query(`DELETE FROM users WHERE id = $1`, [rows[0].id]);
+}
+
 async function register(body) {
   const input = validateRegister(body);
   const {
@@ -115,10 +125,15 @@ async function register(body) {
   try {
     await client.query('BEGIN');
 
-    const existing = await client.query(`SELECT id FROM users WHERE email = $1`, [email]);
+    const existing = await client.query(
+      `SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL`,
+      [email],
+    );
     if (existing.rows.length) {
       throw conflict('EMAIL_EXISTS', 'Email already registered');
     }
+
+    await reclaimEmailIfSoftDeleted(client, email);
 
     const userResult = await client.query(
       `INSERT INTO users (email, password_hash, role)
@@ -221,6 +236,8 @@ async function googleOAuth(body) {
         'Choose athlete, instructor, or gym profile type before signing up with Google',
       );
     }
+
+    await reclaimEmailIfSoftDeleted(client, googleProfile.email);
 
     const resolvedInstitutionName =
       role === 'institution'
