@@ -6,11 +6,16 @@ function errorHandler(err, req, res, next) {
     return;
   }
 
-  const status = err.status || 500;
-  const code = err.code || 'INTERNAL_ERROR';
-  const message = err.message || 'Internal server error';
+  let status = err.status || 500;
+  let code = err.code || 'INTERNAL_ERROR';
+  let message = err.message || 'Internal server error';
 
-  if (status >= 500) {
+  if (!err.status && err.code === '23503') {
+    status = 409;
+    code = 'DATA_INTEGRITY_ERROR';
+    message = 'The operation could not be completed because related data still exists.';
+    console.error('[db] FK violation:', err.message);
+  } else if (status >= 500) {
     console.error(err);
   }
 

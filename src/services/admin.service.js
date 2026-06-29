@@ -25,6 +25,7 @@ function serializeAdminUser(row) {
     ...serializeUser(row),
     createdAt: row.created_at.toISOString(),
     displayName: row.display_name || null,
+    avatarUrl: row.avatar_url || null,
   };
 }
 
@@ -74,7 +75,8 @@ async function listUsers(queryParams) {
   const offsetIdx = listValues.length;
 
   const { rows } = await query(
-    `SELECT u.id, u.email, u.role, u.created_at, ${nameExpr} AS display_name
+    `SELECT u.id, u.email, u.role, u.created_at, ${nameExpr} AS display_name,
+            COALESCE(ap.photo_url, i.photo_url, inst.logo_url) AS avatar_url
      ${USER_LIST_FROM}
      ${whereSql}
      ORDER BY u.created_at DESC
@@ -88,7 +90,8 @@ async function listUsers(queryParams) {
 async function getUser(id) {
   const nameExpr = userDisplayNameSql();
   const { rows } = await query(
-    `SELECT u.id, u.email, u.role, u.created_at, ${nameExpr} AS display_name
+    `SELECT u.id, u.email, u.role, u.created_at, ${nameExpr} AS display_name,
+            COALESCE(ap.photo_url, i.photo_url, inst.logo_url) AS avatar_url
      ${USER_LIST_FROM}
      WHERE u.id = $1 AND u.deleted_at IS NULL`,
     [id],
@@ -225,87 +228,28 @@ async function deleteUser(adminId, id) {
     throw forbidden('You cannot delete your own account');
   }
 
-  const { rows } = await query(
-    `SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL`,
-    [id],
-  );
-  if (!rows.length) throw notFound('User not found');
-
-  if (rows[0].role === 'admin') {
-    const { rows: adminCount } = await query(
-      `SELECT COUNT(*)::int AS c FROM users WHERE role = 'admin' AND deleted_at IS NULL`,
-    );
-    if (adminCount[0].c <= 1) {
-      throw forbidden('Cannot delete the last admin account');
-    }
-  }
-
-  await query(`UPDATE users SET deleted_at = now(), updated_at = now() WHERE id = $1`, [id]);
-  await query(
-    `UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
-    [id],
-  );
-
-  return { id, status: 'deleted' };
+  const usersService = require('./users.service');
+  return usersService.closeAccount(id);
 }
 
 async function listVerificationRequests() {
-  const { rows } = await query(
-    `SELECT vr.*,
-            i.display_name AS instructor_name,
-            inst.name AS institution_name
-     FROM verification_requests vr
-     LEFT JOIN instructors i ON i.id = vr.instructor_id
-     LEFT JOIN institutions inst ON inst.id = vr.institution_id
-     WHERE vr.status = 'pending'
-     ORDER BY vr.submitted_at ASC`,
-  );
+  const verificationService = require('./verification.service');
+  return verificationService.listPendingForAdmin();
+}
 
-  return rows.map((r) => ({
-    id: r.id,
-    subjectType: r.subject_type,
-    instructorId: r.instructor_id,
-    institutionId: r.institution_id,
-    subjectName: r.instructor_name || r.institution_name,
-    status: r.status,
-    submittedAt: r.submitted_at.toISOString(),
-  }));
+async function getVerificationRequest(id) {
+  const verificationService = require('./verification.service');
+  return verificationService.getRequestForAdmin(id);
 }
 
 async function approveVerification(adminId, id) {
-  const { rows } = await query(`SELECT * FROM verification_requests WHERE id = $1`, [id]);
-  if (!rows.length) throw notFound('Verification request not found');
-  const req = rows[0];
-
-  await query(
-    `UPDATE verification_requests
-     SET status = 'approved', reviewed_at = now(), reviewed_by = $1
-     WHERE id = $2`,
-    [adminId, id],
-  );
-
-  if (req.instructor_id) {
-    await query(`UPDATE instructors SET verified = TRUE WHERE id = $1`, [req.instructor_id]);
-  }
-  if (req.institution_id) {
-    await query(`UPDATE institutions SET verified = TRUE WHERE id = $1`, [req.institution_id]);
-  }
-
-  return { id, status: 'approved' };
+  const verificationService = require('./verification.service');
+  return verificationService.approveVerification(adminId, id);
 }
 
 async function rejectVerification(adminId, id, notes) {
-  const { rows } = await query(`SELECT id FROM verification_requests WHERE id = $1`, [id]);
-  if (!rows.length) throw notFound('Verification request not found');
-
-  await query(
-    `UPDATE verification_requests
-     SET status = 'rejected', reviewed_at = now(), reviewed_by = $1, notes = $2
-     WHERE id = $3`,
-    [adminId, notes || null, id],
-  );
-
-  return { id, status: 'rejected' };
+  const verificationService = require('./verification.service');
+  return verificationService.rejectVerification(adminId, id, notes);
 }
 
 async function metricsOverview() {
@@ -429,6 +373,7 @@ module.exports = {
   updateUser,
   deleteUser,
   listVerificationRequests,
+  getVerificationRequest,
   approveVerification,
   rejectVerification,
   metricsOverview,

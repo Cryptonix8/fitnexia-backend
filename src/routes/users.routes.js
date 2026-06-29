@@ -14,6 +14,15 @@ router.patch(
   }),
 );
 
+router.delete(
+  '/me',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await usersService.closeAccount(req.user.id);
+    res.json(result);
+  }),
+);
+
 router.get(
   '/me/profile',
   requireAuth,

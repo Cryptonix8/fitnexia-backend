@@ -292,6 +292,10 @@ async function searchClasses(queryParams) {
     values.push(queryParams.dateTo);
   }
 
+  if (queryParams.verifiedOnly === 'true' || queryParams.verifiedOnly === true) {
+    conditions.push(`i.verified = TRUE`);
+  }
+
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const sortMap = {
     price_asc: 'c.price_cents ASC',

@@ -8,9 +8,11 @@ const CLASS_SELECT = `
   c.*,
   i.display_name AS instructor_display_name,
   i.photo_url AS instructor_photo_url,
+  i.verified AS instructor_verified,
   i.average_rating,
   inst.name AS institution_name,
-  inst.logo_url AS institution_logo_url
+  inst.logo_url AS institution_logo_url,
+  inst.verified AS institution_verified
 `;
 
 const CLASS_JOINS = `

@@ -90,6 +90,16 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+DO $$ BEGIN
+  CREATE TYPE verification_document_type AS ENUM ('dni_front', 'dni_back', 'certification');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE profile_verification_status AS ENUM ('unverified', 'pending', 'verified', 'rejected');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 -- ─── Users & auth ───────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS users (
@@ -139,6 +149,7 @@ CREATE TABLE IF NOT EXISTS instructors (
   photo_url             TEXT,
   disciplines           TEXT[] NOT NULL DEFAULT '{}',
   verified              BOOLEAN NOT NULL DEFAULT FALSE,
+  verification_status   profile_verification_status NOT NULL DEFAULT 'unverified',
   available_now         BOOLEAN NOT NULL DEFAULT FALSE,
   hourly_rate_cents     INTEGER,
   hourly_rate_currency  VARCHAR(3),
@@ -180,6 +191,7 @@ CREATE TABLE IF NOT EXISTS institutions (
   description TEXT DEFAULT '',
   logo_url    TEXT,
   verified    BOOLEAN NOT NULL DEFAULT FALSE,
+  verification_status profile_verification_status NOT NULL DEFAULT 'unverified',
   plan        instructor_plan NOT NULL DEFAULT 'institutional',
   saas_tier   gym_saas_tier NOT NULL DEFAULT 'basic',
   contact_phone TEXT,
@@ -268,8 +280,8 @@ CREATE TABLE IF NOT EXISTS classes (
   class_format              class_format NOT NULL DEFAULT 'group',
   level                     class_level,
   language                  TEXT,
-  instructor_id             UUID NOT NULL REFERENCES instructors(id),
-  institution_id            UUID REFERENCES institutions(id),
+  instructor_id             UUID NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
+  institution_id            UUID REFERENCES institutions(id) ON DELETE CASCADE,
   start_at                  TIMESTAMPTZ NOT NULL,
   duration_minutes          INTEGER NOT NULL CHECK (duration_minutes >= 15),
   price_cents               INTEGER NOT NULL,
@@ -292,8 +304,8 @@ CREATE INDEX IF NOT EXISTS idx_classes_institution ON classes(institution_id);
 
 CREATE TABLE IF NOT EXISTS bookings (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  class_id        UUID NOT NULL REFERENCES classes(id),
-  athlete_user_id UUID NOT NULL REFERENCES users(id),
+  class_id        UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  athlete_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   status          booking_status NOT NULL DEFAULT 'confirmed',
   payment_model   payment_model NOT NULL DEFAULT 'per_class',
   price_cents     INTEGER NOT NULL,
@@ -385,8 +397,8 @@ CREATE INDEX IF NOT EXISTS idx_payments_booking ON payments(booking_id);
 CREATE TABLE IF NOT EXISTS payout_ledger (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   booking_id          UUID NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
-  instructor_id       UUID NOT NULL REFERENCES instructors(id),
-  institution_id      UUID REFERENCES institutions(id),
+  instructor_id       UUID NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
+  institution_id      UUID REFERENCES institutions(id) ON DELETE SET NULL,
   gross_cents         INTEGER NOT NULL,
   platform_fee_cents  INTEGER NOT NULL,
   net_cents           INTEGER NOT NULL,
@@ -407,9 +419,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_provider_payment
 
 CREATE TABLE IF NOT EXISTS reviews (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  booking_id      UUID UNIQUE NOT NULL REFERENCES bookings(id),
-  instructor_id   UUID NOT NULL REFERENCES instructors(id),
-  athlete_user_id UUID NOT NULL REFERENCES users(id),
+  booking_id      UUID UNIQUE NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+  instructor_id   UUID NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
+  athlete_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   rating          SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
   comment         TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -435,9 +447,9 @@ CREATE INDEX IF NOT EXISTS idx_review_reports_review
 
 CREATE TABLE IF NOT EXISTS staff_reviews (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  institution_id  UUID NOT NULL REFERENCES institutions(id),
-  instructor_id   UUID NOT NULL REFERENCES instructors(id),
-  author_user_id  UUID NOT NULL REFERENCES users(id),
+  institution_id  UUID NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
+  instructor_id   UUID NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
+  author_user_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   rating          SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
   comment         TEXT,
   verified        BOOLEAN NOT NULL DEFAULT TRUE,
@@ -542,7 +554,7 @@ CREATE TABLE IF NOT EXISTS membership_invites (
   invited_phone       TEXT,
   status              membership_invite_status NOT NULL DEFAULT 'pending',
   expires_at          TIMESTAMPTZ,
-  accepted_by_user_id UUID REFERENCES users(id),
+  accepted_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   accepted_at         TIMESTAMPTZ,
   bulk_batch_id       TEXT,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -624,8 +636,25 @@ CREATE TABLE IF NOT EXISTS verification_requests (
   submitted_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   reviewed_at     TIMESTAMPTZ,
   reviewed_by     UUID REFERENCES users(id),
-  notes           TEXT
+  notes           TEXT,
+  rejection_reason TEXT,
+  reminder_sent_at TIMESTAMPTZ
 );
+
+CREATE TABLE IF NOT EXISTS verification_documents (
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  verification_request_id UUID NOT NULL REFERENCES verification_requests(id) ON DELETE CASCADE,
+  document_type           verification_document_type NOT NULL,
+  storage_key             TEXT NOT NULL,
+  mime_type               TEXT NOT NULL,
+  original_name           TEXT,
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (verification_request_id, document_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_verification_requests_pending
+  ON verification_requests (submitted_at)
+  WHERE status = 'pending';
 
 -- ─── Rating refresh trigger ─────────────────────────────────────────────────
 

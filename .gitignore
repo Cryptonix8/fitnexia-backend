@@ -1,5 +1,6 @@
 node_modules/
 uploads/
+private-uploads/
 secrets/
 .env
 .env.*

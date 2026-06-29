@@ -16,6 +16,8 @@ const PREF_BY_TYPE = {
   membership_payment_failed: 'paymentUpdates',
   membership_overdue: 'paymentUpdates',
   club_arrears_alert: 'paymentUpdates',
+  verification_approved: null,
+  verification_rejected: null,
 };
 
 function buildDedupeKey(userId, type, { bookingId, inviteId, memberId, dueDate } = {}) {
@@ -353,6 +355,27 @@ async function notifyClubArrearsAlert({ userId, overdueCount, institutionName })
   });
 }
 
+async function notifyVerificationApproved({ userId, displayName }) {
+  return dispatchPush({
+    userId,
+    type: 'verification_approved',
+    title: 'Perfil verificado',
+    body: `¡Felicitaciones ${displayName}! Tu perfil ya tiene la insignia Fitnexia.`,
+    data: { screen: '/profile/verify' },
+  });
+}
+
+async function notifyVerificationRejected({ userId, displayName, reason }) {
+  const preview = reason.length > 80 ? `${reason.slice(0, 77)}…` : reason;
+  return dispatchPush({
+    userId,
+    type: 'verification_rejected',
+    title: 'Verificación no aprobada',
+    body: `${displayName}, revisá el motivo y podés volver a intentar. ${preview}`,
+    data: { screen: '/profile/verify' },
+  });
+}
+
 module.exports = {
   dispatchPush,
   notifyPasswordReset,
@@ -367,6 +390,8 @@ module.exports = {
   notifyMembershipPaymentFailed,
   notifyMembershipOverdue,
   notifyClubArrearsAlert,
+  notifyVerificationApproved,
+  notifyVerificationRejected,
   findUserIdByEmail,
   formatClassWhen,
 };

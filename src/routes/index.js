@@ -16,6 +16,7 @@ const passesRoutes = require('./passes.routes');
 const membershipsRoutes = require('./memberships.routes');
 const webhooksRoutes = require('./webhooks.routes');
 const adminRoutes = require('./admin.routes');
+const verificationRoutes = require('./verification.routes');
 const jobsRoutes = require('./jobs.routes');
 const reviewsService = require('../services/reviews.service');
 const asyncHandler = require('../utils/asyncHandler');
@@ -43,6 +44,7 @@ router.use('/payments', paymentsRoutes);
 router.use('/passes', passesRoutes);
 router.use('/memberships', membershipsRoutes);
 router.use('/webhooks', webhooksRoutes);
+router.use('/verification-requests', verificationRoutes);
 router.use('/admin', adminRoutes);
 router.use('/jobs', jobsRoutes);
 

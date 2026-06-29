@@ -160,10 +160,52 @@ async function updateNotificationPreferences(userId, updates) {
   return getNotificationPreferences(userId);
 }
 
+async function closeAccount(userId) {
+  const { rows } = await query(
+    `SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL`,
+    [userId],
+  );
+  if (!rows.length) throw notFound('User not found');
+
+  if (rows[0].role === 'admin') {
+    const { rows: adminCount } = await query(
+      `SELECT COUNT(*)::int AS c FROM users WHERE role = 'admin' AND deleted_at IS NULL`,
+    );
+    if (adminCount[0].c <= 1) {
+      throw forbidden('Cannot delete the last admin account');
+    }
+  }
+
+  const { purgeUserRelatedData } = require('./user-purge.service');
+  const { pool } = require('../db/pool');
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    await purgeUserRelatedData(client, userId);
+    await client.query(`UPDATE users SET deleted_at = now(), updated_at = now() WHERE id = $1`, [
+      userId,
+    ]);
+    await client.query(
+      `UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
+      [userId],
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return { id: userId, status: 'deleted' };
+}
+
 module.exports = {
   updateUserAccount,
   getAthleteProfile,
   updateAthleteProfile,
   getNotificationPreferences,
   updateNotificationPreferences,
+  closeAccount,
 };

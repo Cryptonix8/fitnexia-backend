@@ -49,6 +49,7 @@ async function serializeClassRow(row, bookedCount) {
       id: row.instructor_id,
       displayName: row.instructor_display_name,
       photoUrl: row.instructor_photo_url || undefined,
+      verified: row.instructor_verified === true,
     },
     classFormat: row.class_format,
   };
@@ -63,6 +64,7 @@ async function serializeClassRow(row, bookedCount) {
       id: row.institution_id,
       name: row.institution_name,
       logoUrl: row.institution_logo_url || undefined,
+      verified: row.institution_verified === true,
     };
   }
 
@@ -109,6 +111,7 @@ async function serializeInstructorFull(row, certifications = [], schedule = []) 
     disciplines: normalizeDisciplineList(row.disciplines || []),
     certifications,
     verified: row.verified,
+    verificationStatus: row.verification_status || (row.verified ? 'verified' : 'unverified'),
     availableNow: row.available_now,
     averageRating: Number(row.average_rating),
     reviewCount: row.review_count,
@@ -133,6 +136,7 @@ async function serializeInstitutionFull(row, gallery = [], instructors = []) {
     logoUrl: row.logo_url || undefined,
     description: row.description || '',
     verified: row.verified,
+    verificationStatus: row.verification_status || (row.verified ? 'verified' : 'unverified'),
     plan: row.plan,
     saasTier: row.saas_tier || 'basic',
     gallery,

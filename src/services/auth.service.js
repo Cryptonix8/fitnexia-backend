@@ -102,6 +102,9 @@ async function reclaimEmailIfSoftDeleted(client, email) {
     [email],
   );
   if (!rows.length) return;
+
+  const { purgeUserRelatedData } = require('./user-purge.service');
+  await purgeUserRelatedData(client, rows[0].id);
   await client.query(`DELETE FROM users WHERE id = $1`, [rows[0].id]);
 }
 
@@ -162,6 +165,12 @@ async function register(body) {
     return tokens;
   } catch (err) {
     await client.query('ROLLBACK');
+    if (err.code === '23503') {
+      throw conflict(
+        'EMAIL_RECLAIM_FAILED',
+        'This email was used before and could not be freed for registration. Contact support.',
+      );
+    }
     throw err;
   } finally {
     client.release();
@@ -266,6 +275,12 @@ async function googleOAuth(body) {
     return { ...tokens, isNewUser: true };
   } catch (err) {
     await client.query('ROLLBACK');
+    if (err.code === '23503') {
+      throw conflict(
+        'EMAIL_RECLAIM_FAILED',
+        'This email was used before and could not be freed for registration. Contact support.',
+      );
+    }
     throw err;
   } finally {
     client.release();

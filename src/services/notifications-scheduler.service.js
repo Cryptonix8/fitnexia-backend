@@ -69,6 +69,8 @@ async function runScheduledNotifications() {
   await processCompletedBookingsAndReviewInvites();
   const membershipsService = require('./memberships.service');
   await membershipsService.runMembershipScheduler();
+  const verificationService = require('./verification.service');
+  await verificationService.processPendingReminders();
 }
 
 function startNotificationScheduler() {

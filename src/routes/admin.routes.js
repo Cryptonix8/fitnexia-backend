@@ -63,6 +63,31 @@ router.post(
   }),
 );
 
+router.get(
+  '/verification-requests/:id',
+  asyncHandler(async (req, res) => {
+    const data = await adminService.getVerificationRequest(req.params.id);
+    res.json(data);
+  }),
+);
+
+router.get(
+  '/verification-requests/:requestId/documents/:documentId',
+  asyncHandler(async (req, res) => {
+    const verificationService = require('../services/verification.service');
+    const doc = await verificationService.getDocumentForAdmin(
+      req.params.requestId,
+      req.params.documentId,
+    );
+    res.setHeader('Content-Type', doc.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${encodeURIComponent(doc.originalName)}"`,
+    );
+    res.send(doc.buffer);
+  }),
+);
+
 router.post(
   '/verification-requests/:id/approve',
   asyncHandler(async (req, res) => {
@@ -77,7 +102,7 @@ router.post(
     const result = await adminService.rejectVerification(
       req.user.id,
       req.params.id,
-      req.body.notes,
+      req.body.reason ?? req.body.notes,
     );
     res.json(result);
   }),

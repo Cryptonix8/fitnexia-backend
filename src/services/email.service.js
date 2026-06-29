@@ -497,6 +497,82 @@ async function sendMembershipArrearsAlertEmail({ to, institutionName, overdueCou
   return sendMail({ to, subject, text, html });
 }
 
+async function sendVerificationReceivedEmail({ to, displayName, businessDays }) {
+  const subject = 'Recibimos tu solicitud de verificación — Fitnexia';
+  const text = [
+    `Hola ${displayName},`,
+    '',
+    'Recibimos tu solicitud de verificación de perfil.',
+    `Te notificaremos dentro de ${businessDays} días hábiles.`,
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola ${escapeHtml(displayName)},</p>
+    <p>Recibimos tu solicitud de verificación de perfil.</p>
+    <p>Te notificaremos dentro de <strong>${businessDays} días hábiles</strong>.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
+async function sendVerificationApprovedEmail({ to, displayName }) {
+  const subject = '¡Perfil verificado! — Fitnexia';
+  const text = [
+    `Hola ${displayName},`,
+    '',
+    'Tu perfil fue verificado. Ya tenés la insignia Fitnexia en tu perfil público.',
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola ${escapeHtml(displayName)},</p>
+    <p>Tu perfil fue <strong>verificado</strong>. Ya tenés la insignia Fitnexia en tu perfil público.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
+async function sendVerificationRejectedEmail({ to, displayName, reason }) {
+  const subject = 'Actualización sobre tu verificación — Fitnexia';
+  const preview = reason.length > 200 ? `${reason.slice(0, 197)}…` : reason;
+  const text = [
+    `Hola ${displayName},`,
+    '',
+    'No pudimos aprobar tu solicitud de verificación en este momento.',
+    `Motivo: ${preview}`,
+    '',
+    'Podés enviar una nueva solicitud desde la app.',
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola ${escapeHtml(displayName)},</p>
+    <p>No pudimos aprobar tu solicitud de verificación en este momento.</p>
+    <p><strong>Motivo:</strong> ${escapeHtml(preview)}</p>
+    <p>Podés enviar una nueva solicitud desde la app.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
+async function sendVerificationPendingReminderEmail({ to, displayName }) {
+  const subject = 'Tu verificación sigue en revisión — Fitnexia';
+  const text = [
+    `Hola ${displayName},`,
+    '',
+    'Tu solicitud de verificación sigue en revisión. Te avisaremos cuando haya novedades.',
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola ${escapeHtml(displayName)},</p>
+    <p>Tu solicitud de verificación sigue en revisión. Te avisaremos cuando haya novedades.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
 module.exports = {
   sendMail,
   sendInstructorInviteEmail,
@@ -507,6 +583,10 @@ module.exports = {
   sendMembershipOverdueEmail,
   sendMembershipPaymentReceiptEmail,
   sendMembershipArrearsAlertEmail,
+  sendVerificationReceivedEmail,
+  sendVerificationApprovedEmail,
+  sendVerificationRejectedEmail,
+  sendVerificationPendingReminderEmail,
   renderPasswordResetOpenPage,
   buildPasswordResetAppLinks,
   isEmailEnabled: () => emailEnabled,
