@@ -15,11 +15,6 @@
     "db:migrate-verification": "node scripts/migrate-verification.js",
     "db:migrate-recurring": "node scripts/migrate-recurring-classes.js",
     "db:migrate-user-purge": "node scripts/migrate-user-purge.js",
-    "test:members-f39": "node scripts/test-members-f39.js",
-    "test:plans-f40": "node scripts/test-plans-f40.js",
-    "test:billing-f41": "node scripts/test-billing-f41.js",
-    "test:statement-f42": "node scripts/test-statement-f42.js",
-    "test:invites-f43": "node scripts/test-invites-f43.js",
     "webhook:url": "node -e \"require('dotenv').config({path:require('path').resolve('.env')}); const u=(process.env.API_PUBLIC_URL||'http://localhost:'+(process.env.PORT||3001)).replace(/\\/$/,''); console.log(u+'/v1/webhooks/mercadopago')\""
   },
   "dependencies": {
