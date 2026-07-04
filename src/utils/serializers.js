@@ -87,6 +87,10 @@ async function serializeClassRow(row, bookedCount) {
     item.cancellationPolicyHours = row.cancellation_policy_hours;
   }
   if (row.recurrence) item.recurrence = row.recurrence;
+  if (row.series_id) {
+    item.seriesId = row.series_id;
+    item.isSeriesException = row.is_series_exception === true;
+  }
 
   return item;
 }

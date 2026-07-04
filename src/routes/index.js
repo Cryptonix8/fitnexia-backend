@@ -33,6 +33,7 @@ router.use('/users', usersRoutes);
 router.use('/instructors', instructorsRoutes);
 router.use('/institutions', institutionsRoutes);
 router.use('/classes', classesRoutes);
+router.use('/class-series', require('./class-series.routes'));
 router.use('/bookings', bookingsRoutes);
 router.use('/reviews', reviewsRoutes);
 router.use('/feed', feedRoutes);

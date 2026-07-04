@@ -573,6 +573,79 @@ async function sendVerificationPendingReminderEmail({ to, displayName }) {
   return sendMail({ to, subject, text, html });
 }
 
+async function sendClassCancelledEmail({ to, athleteName, classTitle, when }) {
+  const subject = 'Clase cancelada — Fitnexia';
+  const whenLine = when ? ` (${when})` : '';
+  const text = [
+    `Hola ${athleteName},`,
+    '',
+    `La clase "${classTitle}"${whenLine} fue cancelada por el instructor.`,
+    'Si ya habías pagado, recibirás el reembolso según la política de cancelación.',
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola ${escapeHtml(athleteName)},</p>
+    <p>La clase <strong>${escapeHtml(classTitle)}</strong>${whenLine ? ` (${escapeHtml(when)})` : ''} fue cancelada por el instructor.</p>
+    <p>Si ya habías pagado, recibirás el reembolso según la política de cancelación.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
+async function sendClassUpdatedEmail({ to, athleteName, classTitle, when }) {
+  const subject = 'Clase actualizada — Fitnexia';
+  const whenLine = when ? ` (${when})` : '';
+  const text = [
+    `Hola ${athleteName},`,
+    '',
+    `La clase "${classTitle}"${whenLine} fue modificada. Revisá los detalles en la app.`,
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola ${escapeHtml(athleteName)},</p>
+    <p>La clase <strong>${escapeHtml(classTitle)}</strong>${whenLine ? ` (${escapeHtml(when)})` : ''} fue modificada.</p>
+    <p>Revisá los detalles en la app.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
+async function sendSeriesPausedEmail({ to, athleteName, seriesTitle }) {
+  const subject = 'Serie de clases pausada — Fitnexia';
+  const text = [
+    `Hola ${athleteName},`,
+    '',
+    `La serie "${seriesTitle}" fue pausada. Tus reservas confirmadas siguen vigentes.`,
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola ${escapeHtml(athleteName)},</p>
+    <p>La serie <strong>${escapeHtml(seriesTitle)}</strong> fue pausada. Tus reservas confirmadas siguen vigentes.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
+async function sendSeriesDeletedEmail({ to, athleteName, seriesTitle }) {
+  const subject = 'Serie de clases eliminada — Fitnexia';
+  const text = [
+    `Hola ${athleteName},`,
+    '',
+    `La serie "${seriesTitle}" fue eliminada. Revisá tus reservas futuras en la app.`,
+    '',
+    '— Fitnexia',
+  ].join('\n');
+  const html = `
+    <p>Hola ${escapeHtml(athleteName)},</p>
+    <p>La serie <strong>${escapeHtml(seriesTitle)}</strong> fue eliminada. Revisá tus reservas futuras en la app.</p>
+    <p>— Fitnexia</p>
+  `;
+  return sendMail({ to, subject, text, html });
+}
+
 module.exports = {
   sendMail,
   sendInstructorInviteEmail,
@@ -587,6 +660,10 @@ module.exports = {
   sendVerificationApprovedEmail,
   sendVerificationRejectedEmail,
   sendVerificationPendingReminderEmail,
+  sendClassCancelledEmail,
+  sendClassUpdatedEmail,
+  sendSeriesPausedEmail,
+  sendSeriesDeletedEmail,
   renderPasswordResetOpenPage,
   buildPasswordResetAppLinks,
   isEmailEnabled: () => emailEnabled,

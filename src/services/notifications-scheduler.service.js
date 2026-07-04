@@ -67,6 +67,8 @@ async function processCompletedBookingsAndReviewInvites() {
 async function runScheduledNotifications() {
   await processClassReminders();
   await processCompletedBookingsAndReviewInvites();
+  const classSeriesService = require('./class-series.service');
+  await classSeriesService.extendActiveSeriesHorizon();
   const membershipsService = require('./memberships.service');
   await membershipsService.runMembershipScheduler();
   const verificationService = require('./verification.service');

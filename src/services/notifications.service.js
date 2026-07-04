@@ -18,6 +18,10 @@ const PREF_BY_TYPE = {
   club_arrears_alert: 'paymentUpdates',
   verification_approved: null,
   verification_rejected: null,
+  class_cancelled_by_instructor: 'bookingConfirmed',
+  class_updated_by_instructor: 'classReminders',
+  series_paused: 'classReminders',
+  series_deleted: 'classReminders',
 };
 
 function buildDedupeKey(userId, type, { bookingId, inviteId, memberId, dueDate } = {}) {
@@ -376,6 +380,151 @@ async function notifyVerificationRejected({ userId, displayName, reason }) {
   });
 }
 
+async function listBookedAthletesForClass(classId) {
+  const { rows } = await query(
+    `SELECT DISTINCT b.athlete_user_id, u.email, ap.first_name, ap.last_name
+     FROM bookings b
+     JOIN users u ON u.id = b.athlete_user_id
+     LEFT JOIN athlete_profiles ap ON ap.user_id = u.id
+     WHERE b.class_id = $1 AND b.status IN ('pending_payment', 'confirmed')`,
+    [classId],
+  );
+  return rows;
+}
+
+async function listBookedAthletesForSeries(seriesId) {
+  const { rows } = await query(
+    `SELECT DISTINCT b.athlete_user_id, u.email, ap.first_name, ap.last_name
+     FROM bookings b
+     JOIN classes c ON c.id = b.class_id
+     JOIN users u ON u.id = b.athlete_user_id
+     LEFT JOIN athlete_profiles ap ON ap.user_id = u.id
+     WHERE c.series_id = $1
+       AND c.start_at > now()
+       AND b.status IN ('pending_payment', 'confirmed')`,
+    [seriesId],
+  );
+  return rows;
+}
+
+async function getClassNotificationContext(classId) {
+  const { rows } = await query(
+    `SELECT c.id, c.title, c.start_at, c.series_id FROM classes c WHERE c.id = $1`,
+    [classId],
+  );
+  return rows[0] || null;
+}
+
+async function notifyClassInstanceCancelled(classId) {
+  const ctx = await getClassNotificationContext(classId);
+  if (!ctx) return;
+
+  const athletes = await listBookedAthletesForClass(classId);
+  const when = formatClassWhen(ctx.start_at);
+  const emailService = require('./email.service');
+
+  await Promise.all(
+    athletes.map(async (athlete) => {
+      await dispatchPush({
+        userId: athlete.athlete_user_id,
+        type: 'class_cancelled_by_instructor',
+        title: 'Clase cancelada',
+        body: `${ctx.title}${when ? ` — ${when}` : ''} fue cancelada. Recibirás reembolso si corresponde.`,
+        data: { classId, screen: '/(athlete)/(tabs)/bookings' },
+      });
+      if (athlete.email && emailService.isEmailEnabled()) {
+        await emailService.sendClassCancelledEmail({
+          to: athlete.email,
+          athleteName: [athlete.first_name, athlete.last_name].filter(Boolean).join(' ') || 'Atleta',
+          classTitle: ctx.title,
+          when,
+        });
+      }
+    }),
+  );
+}
+
+async function notifyClassInstanceUpdated(classId) {
+  const ctx = await getClassNotificationContext(classId);
+  if (!ctx) return;
+
+  const athletes = await listBookedAthletesForClass(classId);
+  const when = formatClassWhen(ctx.start_at);
+  const emailService = require('./email.service');
+
+  await Promise.all(
+    athletes.map(async (athlete) => {
+      await dispatchPush({
+        userId: athlete.athlete_user_id,
+        type: 'class_updated_by_instructor',
+        title: 'Clase actualizada',
+        body: `${ctx.title}${when ? ` — ${when}` : ''} fue modificada.`,
+        data: { classId, screen: `/class/${classId}` },
+      });
+      if (athlete.email && emailService.isEmailEnabled()) {
+        await emailService.sendClassUpdatedEmail({
+          to: athlete.email,
+          athleteName: [athlete.first_name, athlete.last_name].filter(Boolean).join(' ') || 'Atleta',
+          classTitle: ctx.title,
+          when,
+        });
+      }
+    }),
+  );
+}
+
+async function notifySeriesPaused(seriesId) {
+  const { rows } = await query(`SELECT title FROM class_series WHERE id = $1`, [seriesId]);
+  const title = rows[0]?.title || 'Serie de clases';
+  const athletes = await listBookedAthletesForSeries(seriesId);
+  const emailService = require('./email.service');
+
+  await Promise.all(
+    athletes.map(async (athlete) => {
+      await dispatchPush({
+        userId: athlete.athlete_user_id,
+        type: 'series_paused',
+        title: 'Serie pausada',
+        body: `La serie "${title}" fue pausada. Tus reservas confirmadas siguen vigentes.`,
+        data: { seriesId, screen: '/(athlete)/(tabs)/bookings' },
+      });
+      if (athlete.email && emailService.isEmailEnabled()) {
+        await emailService.sendSeriesPausedEmail({
+          to: athlete.email,
+          athleteName: [athlete.first_name, athlete.last_name].filter(Boolean).join(' ') || 'Atleta',
+          seriesTitle: title,
+        });
+      }
+    }),
+  );
+}
+
+async function notifySeriesDeleted(seriesId) {
+  const { rows } = await query(`SELECT title FROM class_series WHERE id = $1`, [seriesId]);
+  const title = rows[0]?.title || 'Serie de clases';
+  const athletes = await listBookedAthletesForSeries(seriesId);
+  const emailService = require('./email.service');
+
+  await Promise.all(
+    athletes.map(async (athlete) => {
+      await dispatchPush({
+        userId: athlete.athlete_user_id,
+        type: 'series_deleted',
+        title: 'Serie eliminada',
+        body: `La serie "${title}" fue eliminada. Revisá tus reservas futuras.`,
+        data: { seriesId, screen: '/(athlete)/(tabs)/bookings' },
+      });
+      if (athlete.email && emailService.isEmailEnabled()) {
+        await emailService.sendSeriesDeletedEmail({
+          to: athlete.email,
+          athleteName: [athlete.first_name, athlete.last_name].filter(Boolean).join(' ') || 'Atleta',
+          seriesTitle: title,
+        });
+      }
+    }),
+  );
+}
+
 module.exports = {
   dispatchPush,
   notifyPasswordReset,
@@ -392,6 +541,10 @@ module.exports = {
   notifyClubArrearsAlert,
   notifyVerificationApproved,
   notifyVerificationRejected,
+  notifyClassInstanceCancelled,
+  notifyClassInstanceUpdated,
+  notifySeriesPaused,
+  notifySeriesDeleted,
   findUserIdByEmail,
   formatClassWhen,
 };

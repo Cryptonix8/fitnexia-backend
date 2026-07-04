@@ -37,6 +37,12 @@ async function assertCanManageClass(user, classRow) {
 }
 
 async function createClass(user, body) {
+  if (body.recurrence?.enabled) {
+    const classSeriesService = require('./class-series.service');
+    const result = await classSeriesService.createRecurringSeries(user, body);
+    return result.firstInstance;
+  }
+
   const {
     title,
     description,
@@ -125,7 +131,7 @@ async function createClass(user, body) {
   return getClassById(rows[0].id);
 }
 
-async function updateClass(user, id, updates) {
+async function updateClassInternal(user, id, updates) {
   const classRow = await getClassRow(id);
   await assertCanManageClass(user, classRow);
 
@@ -191,6 +197,15 @@ async function updateClass(user, id, updates) {
   return getClassById(id);
 }
 
+async function updateClass(user, id, updates) {
+  const { editScope, ...fields } = updates;
+  if (editScope && (editScope === 'this' || editScope === 'following')) {
+    const classSeriesService = require('./class-series.service');
+    return classSeriesService.updateClassWithScope(user, id, fields, editScope);
+  }
+  return updateClassInternal(user, id, fields);
+}
+
 async function cancelClass(user, id) {
   const classRow = await getClassRow(id);
   await assertCanManageClass(user, classRow);
@@ -218,6 +233,9 @@ async function cancelClass(user, id) {
   }
 
   await query(`UPDATE classes SET cancelled_at = now(), updated_at = now() WHERE id = $1`, [id]);
+
+  const { notifyClassInstanceCancelled } = require('./notifications.service');
+  await notifyClassInstanceCancelled(id);
 }
 
 async function listMine(user) {
@@ -358,7 +376,9 @@ module.exports = {
   getClassById,
   createClass,
   updateClass,
+  updateClassInternal,
   cancelClass,
+  assertCanManageClass,
   listMine,
   searchClasses,
   homeFeed,

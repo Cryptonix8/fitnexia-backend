@@ -13,6 +13,7 @@
     "db:migrate-marketplace": "node scripts/migrate-mp-marketplace.js",
     "db:migrate-disciplines": "node scripts/migrate-disciplines.js",
     "db:migrate-verification": "node scripts/migrate-verification.js",
+    "db:migrate-recurring": "node scripts/migrate-recurring-classes.js",
     "db:migrate-user-purge": "node scripts/migrate-user-purge.js",
     "test:members-f39": "node scripts/test-members-f39.js",
     "test:plans-f40": "node scripts/test-plans-f40.js",
