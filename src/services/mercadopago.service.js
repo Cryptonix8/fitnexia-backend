@@ -77,7 +77,7 @@ function requireHttpsApiPublicUrl(purpose) {
   const base = apiPublicUrl.replace(/\/$/, '');
   if (!base.startsWith('https://')) {
     const err = new Error(
-      `API_PUBLIC_URL must be a public HTTPS URL (e.g. ngrok) for Mercado Pago ${purpose}`,
+      `API_PUBLIC_URL must be a public HTTPS URL for Mercado Pago ${purpose}`,
     );
     err.code = 'MP_BACK_URL_CONFIG';
     throw err;

@@ -2,6 +2,7 @@ const { Router } = require('express');
 const asyncHandler = require('../utils/asyncHandler');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const classesService = require('../services/classes.service');
+const waitlistService = require('../services/waitlist.service');
 
 const router = Router();
 
@@ -65,6 +66,16 @@ router.post(
   asyncHandler(async (req, res) => {
     await classesService.cancelClass(req.user, req.params.id);
     res.status(204).send();
+  }),
+);
+
+router.post(
+  '/:classId/waitlist',
+  requireAuth,
+  requireRole('athlete'),
+  asyncHandler(async (req, res) => {
+    const entry = await waitlistService.joinWaitlist(req.user, req.params.classId);
+    res.status(201).json(entry);
   }),
 );
 

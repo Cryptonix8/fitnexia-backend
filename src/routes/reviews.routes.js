@@ -40,4 +40,14 @@ router.post(
   }),
 );
 
+router.post(
+  '/:id/response',
+  requireAuth,
+  requireRole('instructor', 'institution'),
+  asyncHandler(async (req, res) => {
+    const review = await reviewsService.respondToReview(req.user, req.params.id, req.body);
+    res.json(review);
+  }),
+);
+
 module.exports = router;

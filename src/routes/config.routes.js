@@ -7,6 +7,7 @@ const devicesService = require('../services/notifications-devices.service');
 const notificationsService = require('../services/notifications.service');
 const configService = require('../services/config.service');
 const passesService = require('../services/passes.service');
+const inboxService = require('../services/notifications-inbox.service');
 
 const router = Router();
 
@@ -63,6 +64,42 @@ router.post(
       data: { screen: '/(athlete)/(tabs)/bookings' },
       skipDedupe: true,
     });
+    res.json(result);
+  }),
+);
+
+router.get(
+  '/',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await inboxService.listNotifications(req.user.id, req.query);
+    res.json(result);
+  }),
+);
+
+router.get(
+  '/unread-count',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await inboxService.getUnreadCount(req.user.id);
+    res.json(result);
+  }),
+);
+
+router.patch(
+  '/:id/read',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await inboxService.markRead(req.user.id, req.params.id);
+    res.json(result);
+  }),
+);
+
+router.post(
+  '/read-all',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await inboxService.markAllRead(req.user.id);
     res.json(result);
   }),
 );

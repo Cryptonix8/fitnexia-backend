@@ -196,7 +196,10 @@ function validateRegister(body) {
     institutionName,
     photoUrl,
     acceptTerms = true,
+    gender,
   } = body ?? {};
+
+  const GENDER_VALUES = ['male', 'female', 'other', 'prefer_not_to_say'];
 
   const errors = collectErrors([
     () => validateEmailField(email),
@@ -220,6 +223,16 @@ function validateRegister(body) {
       return null;
     },
     () => (role === 'institution' ? validateInstitutionName(institutionName, { required: true }) : null),
+    () => {
+      if (role !== 'instructor') return null;
+      if (!gender) {
+        return { field: 'gender', message: 'Gender is required for instructor registration' };
+      }
+      if (!GENDER_VALUES.includes(gender)) {
+        return { field: 'gender', message: 'gender must be male, female, other, or prefer_not_to_say' };
+      }
+      return null;
+    },
   ]);
 
   failIfErrors(errors);
@@ -235,6 +248,7 @@ function validateRegister(body) {
     institutionName: trim(institutionName),
     photoUrl: photoUrl || null,
     acceptTerms: true,
+    gender: role === 'instructor' ? gender : null,
   };
 }
 
@@ -274,12 +288,20 @@ function validateAthleteProfile(updates) {
 }
 
 function validateInstructorProfile(updates) {
+  const GENDER_VALUES = ['male', 'female', 'other', 'prefer_not_to_say'];
   const errors = collectErrors([
     () => (updates.displayName !== undefined ? validateDisplayName(updates.displayName, { required: true }) : null),
     () => validateOptionalText(updates.bio, 'bio', LIMITS.bio),
     () => validateOptionalUrl(updates.photoUrl, 'photoUrl'),
     () => validateDisciplineList(updates.disciplines, 'disciplines'),
     () => validateHourlyRate(updates.hourlyRate),
+    () => {
+      if (updates.gender === undefined || updates.gender === null) return null;
+      if (!GENDER_VALUES.includes(updates.gender)) {
+        return { field: 'gender', message: 'gender must be male, female, other, or prefer_not_to_say' };
+      }
+      return null;
+    },
   ]);
 
   if (updates.certifications !== undefined) {

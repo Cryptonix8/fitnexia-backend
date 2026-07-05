@@ -333,6 +333,29 @@ router.get(
   }),
 );
 
+router.get(
+  '/me/members/collections',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const panel = await membershipsService.getCollectionsPanel(req.user.id);
+    res.json(panel);
+  }),
+);
+
+router.get(
+  '/me/metrics',
+  requireAuth,
+  requireRole('institution'),
+  asyncHandler(async (req, res) => {
+    const metricsService = require('../services/metrics.service');
+    const metrics = await metricsService.getInstitutionMetrics(req.user.id, {
+      period: req.query.period,
+    });
+    res.json(metrics);
+  }),
+);
+
 router.post(
   '/me/members',
   requireAuth,

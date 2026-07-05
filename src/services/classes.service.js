@@ -314,6 +314,21 @@ async function searchClasses(queryParams) {
     conditions.push(`i.verified = TRUE`);
   }
 
+  if (queryParams.level) {
+    conditions.push(`c.level = $${i++}`);
+    values.push(queryParams.level);
+  }
+
+  if (queryParams.language) {
+    conditions.push(`c.language ILIKE $${i++}`);
+    values.push(queryParams.language);
+  }
+
+  if (queryParams.instructorGender) {
+    conditions.push(`i.gender = $${i++}`);
+    values.push(queryParams.instructorGender);
+  }
+
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const sortMap = {
     price_asc: 'c.price_cents ASC',

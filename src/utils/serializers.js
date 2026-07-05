@@ -50,6 +50,7 @@ async function serializeClassRow(row, bookedCount) {
       displayName: row.instructor_display_name,
       photoUrl: row.instructor_photo_url || undefined,
       verified: row.instructor_verified === true,
+      gender: row.instructor_gender || undefined,
     },
     classFormat: row.class_format,
   };
@@ -120,6 +121,7 @@ async function serializeInstructorFull(row, certifications = [], schedule = []) 
     averageRating: Number(row.average_rating),
     reviewCount: row.review_count,
     plan: row.plan,
+    gender: row.gender || undefined,
   };
 
   if (row.hourly_rate_cents != null) {

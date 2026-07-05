@@ -9,6 +9,7 @@ const CLASS_SELECT = `
   i.display_name AS instructor_display_name,
   i.photo_url AS instructor_photo_url,
   i.verified AS instructor_verified,
+  i.gender AS instructor_gender,
   i.average_rating,
   inst.name AS institution_name,
   inst.logo_url AS institution_logo_url,
@@ -45,6 +46,7 @@ async function updateInstructorMe(userId, updates) {
     disciplines: 'disciplines',
     hourlyRate: null,
     plan: 'plan',
+    gender: 'gender',
   };
 
   const sets = [];

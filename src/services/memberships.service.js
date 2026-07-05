@@ -796,6 +796,64 @@ async function getMembersSummary(userId) {
   };
 }
 
+async function getCollectionsPanel(userId) {
+  const institution = await institutionsService.getInstitutionByUserId(userId);
+  const summary = await getMembersSummary(userId);
+
+  const { rows: monthRows } = await query(
+    `SELECT
+       COALESCE(SUM(amount_cents) FILTER (WHERE status = 'approved'), 0)::int AS collected_cents,
+       COUNT(*) FILTER (WHERE status = 'approved') AS payments_count,
+       COUNT(*) FILTER (WHERE status = 'pending') AS pending_count,
+       COUNT(*) FILTER (WHERE status = 'rejected') AS failed_count
+     FROM membership_payments
+     WHERE institution_id = $1
+       AND created_at >= date_trunc('month', now())`,
+    [institution.id],
+  );
+
+  const { rows: expectedRows } = await query(
+    `SELECT COALESCE(SUM(mp.price_cents), 0)::int AS expected_cents
+     FROM club_members cm
+     JOIN membership_plans mp ON mp.id = cm.plan_id
+     WHERE cm.institution_id = $1
+       AND cm.status IN ('active', 'pending_payment', 'overdue')
+       AND cm.left_at IS NULL`,
+    [institution.id],
+  );
+
+  const collectedCents = Number(monthRows[0].collected_cents);
+  const expectedCents = Number(expectedRows[0].expected_cents);
+  const collectionRate = expectedCents > 0 ? collectedCents / expectedCents : 0;
+
+  const { rows: trendRows } = await query(
+    `SELECT DATE(created_at) AS day,
+            COALESCE(SUM(amount_cents) FILTER (WHERE status = 'approved'), 0)::int AS collected_cents
+     FROM membership_payments
+     WHERE institution_id = $1
+       AND created_at >= now() - interval '30 days'
+     GROUP BY DATE(created_at)
+     ORDER BY day ASC`,
+    [institution.id],
+  );
+
+  return {
+    summary,
+    month: {
+      collected: { amount: collectedCents, currency: 'UYU' },
+      expected: { amount: expectedCents, currency: 'UYU' },
+      collectionRate,
+      paymentsCount: Number(monthRows[0].payments_count),
+      pendingCount: Number(monthRows[0].pending_count),
+      failedCount: Number(monthRows[0].failed_count),
+    },
+    dailyCollections: trendRows.map((r) => ({
+      date: r.day.toISOString().slice(0, 10),
+      collectedCents: r.collected_cents,
+    })),
+  };
+}
+
 // ─── Athlete: accept invite & authorize (F-41, F-43) ────────────────────────
 
 async function acceptInvite(user, code) {
@@ -1867,6 +1925,7 @@ module.exports = {
   updateMember,
   removeMember,
   getMembersSummary,
+  getCollectionsPanel,
   acceptInvite,
   startAuthorization,
   activateSubscription,

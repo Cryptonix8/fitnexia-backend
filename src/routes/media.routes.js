@@ -5,7 +5,7 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const asyncHandler = require('../utils/asyncHandler');
 const { badRequest } = require('../utils/errors');
-const { apiPublicUrl } = require('../config/env');
+const { apiPublicUrl, isDev } = require('../config/env');
 
 const router = Router();
 
@@ -17,6 +17,26 @@ const EXT_BY_TYPE = {
   'image/webp': '.webp',
   'image/gif': '.gif',
 };
+
+function isEphemeralPublicUrl(url) {
+  return !url || /localhost|127\.0\.0\.1|ngrok/i.test(url);
+}
+
+function publicApiV1Base(req) {
+  const mediaPublicUrl = (process.env.MEDIA_PUBLIC_URL || '').replace(/\/$/, '');
+  if (mediaPublicUrl) {
+    return mediaPublicUrl.endsWith('/v1') ? mediaPublicUrl : `${mediaPublicUrl}/v1`;
+  }
+
+  const configured = (apiPublicUrl || '').replace(/\/$/, '');
+  if (!isEphemeralPublicUrl(configured) && !(isDev && /ngrok/i.test(configured))) {
+    return configured.endsWith('/v1') ? configured : `${configured}/v1`;
+  }
+
+  const proto = req.get('x-forwarded-proto') || req.protocol;
+  const host = req.get('x-forwarded-host') || req.get('host');
+  return `${proto}://${host}/v1`;
+}
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -41,18 +61,6 @@ const upload = multer({
     cb(new Error('INVALID_IMAGE_TYPE'));
   },
 });
-
-function publicApiV1Base(req) {
-  const configured = (process.env.MEDIA_PUBLIC_URL || apiPublicUrl || '').replace(/\/$/, '');
-  if (configured && !configured.includes('localhost')) {
-    if (configured.endsWith('/v1')) return configured;
-    return `${configured}/v1`;
-  }
-
-  const proto = req.get('x-forwarded-proto') || req.protocol;
-  const host = req.get('x-forwarded-host') || req.get('host');
-  return `${proto}://${host}/v1`;
-}
 
 router.post(
   '/presign',

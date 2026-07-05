@@ -78,6 +78,19 @@ router.get(
 );
 
 router.get(
+  '/me/metrics',
+  requireAuth,
+  requireRole('instructor'),
+  asyncHandler(async (req, res) => {
+    const metricsService = require('../services/metrics.service');
+    const metrics = await metricsService.getInstructorMetrics(req.user.id, {
+      period: req.query.period,
+    });
+    res.json(metrics);
+  }),
+);
+
+router.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const instructor = await instructorsService.getInstructorById(req.params.id);

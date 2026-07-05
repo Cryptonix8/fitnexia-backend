@@ -1,6 +1,7 @@
 const { query } = require('../db/pool');
 const { sendPushToTokens } = require('./push.service');
 const { listDeviceTokens, deleteTokens } = require('./notifications-devices.service');
+const inboxService = require('./notifications-inbox.service');
 
 const PREF_BY_TYPE = {
   password_reset: null,
@@ -22,6 +23,8 @@ const PREF_BY_TYPE = {
   class_updated_by_instructor: 'classReminders',
   series_paused: 'classReminders',
   series_deleted: 'classReminders',
+  waitlist_spot: 'bookingConfirmed',
+  court_reservation_confirmed: 'bookingConfirmed',
 };
 
 function buildDedupeKey(userId, type, { bookingId, inviteId, memberId, dueDate } = {}) {
@@ -115,12 +118,18 @@ async function dispatchPush({
       if (!claimed) return { sent: false, reason: 'duplicate' };
     }
 
+    const payload = { type, ...data };
+    try {
+      await inboxService.createInboxNotification({ userId, type, title, body, data: payload });
+    } catch (inboxErr) {
+      console.warn(`[notifications] inbox write failed for user ${userId}:`, inboxErr.message);
+    }
+
     const tokens = await listDeviceTokens(userId);
     if (!tokens.length) {
       return { sent: false, reason: 'no_devices' };
     }
 
-    const payload = { type, ...data };
     const { sent, invalidTokens } = await sendPushToTokens(tokens, { title, body, data: payload });
     if (invalidTokens.length) {
       await deleteTokens(invalidTokens);

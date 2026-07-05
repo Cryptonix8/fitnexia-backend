@@ -37,6 +37,7 @@ async function insertRoleProfile(client, userId, role, profile) {
     favoriteSports = [],
     disciplines = [],
     institutionName,
+    gender = null,
   } = profile;
 
   if (role === 'athlete') {
@@ -51,10 +52,10 @@ async function insertRoleProfile(client, userId, role, profile) {
   if (role === 'instructor') {
     const displayName = `${firstName} ${lastName}`.trim();
     const instructorResult = await client.query(
-      `INSERT INTO instructors (user_id, display_name, photo_url, disciplines)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO instructors (user_id, display_name, photo_url, disciplines, gender)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id`,
-      [userId, displayName, photoUrl, disciplines],
+      [userId, displayName, photoUrl, disciplines, gender],
     );
 
     for (const day of DEFAULT_SCHEDULE) {
@@ -120,6 +121,7 @@ async function register(body) {
     disciplines,
     institutionName,
     photoUrl,
+    gender,
   } = input;
 
   const passwordHash = await hashPassword(password);
@@ -158,6 +160,7 @@ async function register(body) {
       favoriteSports,
       disciplines,
       institutionName,
+      gender,
     });
 
     const tokens = await createTokens(client, user);

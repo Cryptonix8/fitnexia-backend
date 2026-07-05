@@ -17,24 +17,26 @@ Feature flags: [`constants/features.ts`](../constants/features.ts).
 
 ## Post-MVP (hidden via feature flags)
 
-| Feature | Flag | Target |
-|---------|------|--------|
-| Advanced search (level, language, gender) | `advancedSearch` | v2 |
-| Map / geolocation | `geolocationMap` | v2 (enabled in dev) |
-| Recurring classes | `recurringClasses` | v2 |
-| Live streaming | `liveStreaming` | v2 |
-| Recorded VOD | `recordedClasses` | v3 |
-| Waitlist | `waitlist` | v2 |
-| Multi-currency | `multipleCurrencies` | v2 |
-| Apple / Google Pay | `digitalWallets` | v2 |
-| Monthly / period subscriptions | `subscriptionPaymentModels` | v2 |
-| Mercado Pago checkout | `integratedPayments` | v2 |
-| Loyalty credits | `loyaltyCredits` | v2 |
-| Instructor review replies | `reviewResponses` | v2 |
-| In-app notification inbox | `inAppNotificationCenter` | v2 |
-| Gym analytics tab | `analyticsMetrics` | v2 |
-| Support tickets | `platformSupport` | v2 |
-| Saved payment methods | `savedPaymentMethods` | v2 |
+| Feature | Flag | Target | Status |
+|---------|------|--------|--------|
+| Advanced search (level, language, gender) | `advancedSearch` | v2 | **Implemented** |
+| Map / geolocation | `geolocationMap` | v2 | Implemented |
+| Recurring classes | `recurringClasses` | v2 | Implemented |
+| Live streaming | `liveStreaming` | v2 | Deferred |
+| Recorded VOD | `recordedClasses` | v3 | Deferred |
+| Waitlist | `waitlist` | v2 | **Implemented** |
+| Multi-currency | `multipleCurrencies` | v2 | Deferred |
+| Apple / Google Pay | `digitalWallets` | v2 | Deferred |
+| Monthly / period subscriptions | `subscriptionPaymentModels` | v2 | Implemented |
+| Mercado Pago checkout | `integratedPayments` | v2 | Implemented |
+| Loyalty credits | `loyaltyCredits` | v2 | Deferred |
+| Instructor review replies | `reviewResponses` | v2 | **Implemented** |
+| In-app notification inbox | `inAppNotificationCenter` | v2 | **Implemented** |
+| Gym analytics tab | `analyticsMetrics` | v2 | **Implemented** |
+| Club collections panel | `clubCollections` | v2 | **Implemented** |
+| Courts / reservations | `courts` | v2 | **Implemented** |
+| Support tickets | `platformSupport` | v2 | Deferred |
+| Saved payment methods | `savedPaymentMethods` | v2 | Deferred |
 
 ## Enabling a feature later
 

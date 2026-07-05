@@ -27,7 +27,7 @@ async function createBooking(user, body) {
   const booked = await getBookingCount(classId);
   if (classRow.capacity != null && booked >= classRow.capacity) {
     throw conflict('CLASS_FULL', 'This class has no available spots.', {
-      waitlistAvailable: false,
+      waitlistAvailable: true,
     });
   }
 
@@ -277,6 +277,8 @@ async function cancelBooking(user, id) {
        WHERE booking_id = $1 AND status = 'pending'`,
       [id],
     );
+    const waitlistService = require('./waitlist.service');
+    await waitlistService.promoteNextOnCancellation(booking.class_id);
     return serializeBooking({ ...booking, status: 'cancelled' });
   }
 
@@ -287,6 +289,8 @@ async function cancelBooking(user, id) {
 
   if (refundEligible) {
     await paymentsService.refundPaymentForBooking(id);
+    const waitlistService = require('./waitlist.service');
+    await waitlistService.promoteNextOnCancellation(booking.class_id);
     return serializeBooking({ ...booking, status: 'refunded' });
   }
 
@@ -294,6 +298,8 @@ async function cancelBooking(user, id) {
     `UPDATE bookings SET status = 'cancelled', cancelled_at = now() WHERE id = $1`,
     [id],
   );
+  const waitlistService = require('./waitlist.service');
+  await waitlistService.promoteNextOnCancellation(booking.class_id);
   return serializeBooking({ ...booking, status: 'cancelled' });
 }
 

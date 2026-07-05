@@ -62,7 +62,7 @@ async function createReview(user, body) {
 
 async function listInstructorReviews(instructorId) {
   const { rows } = await query(
-    `SELECT r.id, r.rating, r.comment, r.created_at,
+    `SELECT r.id, r.rating, r.comment, r.response, r.response_at, r.created_at,
             ap.first_name, ap.last_name
      FROM reviews r
      JOIN users u ON u.id = r.athlete_user_id
@@ -77,8 +77,58 @@ async function listInstructorReviews(instructorId) {
     rating: r.rating,
     comment: r.comment || undefined,
     authorName: [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Athlete',
+    response: r.response || null,
+    responseAt: r.response_at?.toISOString() ?? null,
     createdAt: r.created_at.toISOString(),
   }));
+}
+
+async function respondToReview(user, reviewId, body) {
+  const comment = typeof body?.response === 'string' ? body.response.trim() : '';
+  if (!comment) throw badRequest('response is required');
+
+  const { rows } = await query(
+    `SELECT r.*, i.user_id AS instructor_user_id
+     FROM reviews r
+     JOIN instructors i ON i.id = r.instructor_id
+     WHERE r.id = $1 AND r.removed_at IS NULL`,
+    [reviewId],
+  );
+  if (!rows.length) throw notFound('Review not found');
+  const review = rows[0];
+
+  if (user.role === 'instructor') {
+    if (review.instructor_user_id !== user.id) {
+      throw forbidden('Not your review');
+    }
+  } else if (user.role === 'institution') {
+    const institution = await getInstitutionByUserId(user.id);
+    const { rows: links } = await query(
+      `SELECT 1 FROM institution_instructors
+       WHERE institution_id = $1 AND instructor_id = $2 AND status = 'active'`,
+      [institution.id, review.instructor_id],
+    );
+    if (!links.length) throw forbidden('Instructor is not linked to your institution');
+  } else {
+    throw forbidden('Only instructors or institutions can respond to reviews');
+  }
+
+  const { rows: updated } = await query(
+    `UPDATE reviews SET response = $2, response_at = now()
+     WHERE id = $1
+     RETURNING id, rating, comment, response, response_at, created_at`,
+    [reviewId, comment],
+  );
+
+  const r = updated[0];
+  return {
+    id: r.id,
+    rating: r.rating,
+    comment: r.comment || undefined,
+    response: r.response,
+    responseAt: r.response_at.toISOString(),
+    createdAt: r.created_at.toISOString(),
+  };
 }
 
 async function reportReview(user, reviewId, body) {
@@ -171,6 +221,7 @@ async function listStaffReviewsForInstructor(instructorId) {
 module.exports = {
   createReview,
   listInstructorReviews,
+  respondToReview,
   createStaffReview,
   listStaffReviewsForInstructor,
   reportReview,
