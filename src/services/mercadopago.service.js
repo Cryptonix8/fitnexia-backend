@@ -105,6 +105,16 @@ function buildMembershipCheckoutBackUrl(memberId, status = 'success') {
   return `${base}/v1/memberships/checkout-return?${params.toString()}`;
 }
 
+/** Checkout Pro class/pass booking — HTTPS return URL that redirects to the app. */
+function buildBookingCheckoutBackUrl(bookingId, status = 'success') {
+  const base = requireHttpsApiPublicUrl('booking checkout');
+  const params = new URLSearchParams({
+    bookingId: String(bookingId),
+    status,
+  });
+  return `${base}/v1/payments/booking-return?${params.toString()}`;
+}
+
 function frequencyToMercadoPago(frequency) {
   if (frequency === 'monthly') return { frequency: 1, frequency_type: 'months' };
   if (frequency === 'quarterly') return { frequency: 3, frequency_type: 'months' };
@@ -184,9 +194,9 @@ async function createCheckoutPreference({
         pending: buildMembershipCheckoutBackUrl(membershipMemberId, 'pending'),
       }
     : {
-        success: buildDeepLink(deepLinkBookingId, 'success'),
-        failure: buildDeepLink(deepLinkBookingId, 'failure'),
-        pending: buildDeepLink(deepLinkBookingId, 'pending'),
+        success: buildBookingCheckoutBackUrl(deepLinkBookingId, 'success'),
+        failure: buildBookingCheckoutBackUrl(deepLinkBookingId, 'failure'),
+        pending: buildBookingCheckoutBackUrl(deepLinkBookingId, 'pending'),
       };
 
   const body = {
@@ -261,6 +271,7 @@ module.exports = {
   buildMembershipDeepLink,
   buildMembershipAuthorizeBackUrl,
   buildMembershipCheckoutBackUrl,
+  buildBookingCheckoutBackUrl,
   resolveMercadoPagoCurrency,
   resolveCheckoutInitPoint,
   resolvePreapprovalInitPoint,
