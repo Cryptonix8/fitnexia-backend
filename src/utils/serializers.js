@@ -80,6 +80,9 @@ async function serializeClassRow(row, bookedCount) {
   if (row.average_rating != null) {
     item.averageRating = Number(row.average_rating);
   }
+  if (row.review_count != null) {
+    item.reviewCount = Number(row.review_count);
+  }
 
   if (row.description != null) item.description = row.description;
   if (row.level) item.level = row.level;
@@ -174,6 +177,7 @@ function serializeBooking(row, cls) {
     userId: row.athlete_user_id,
     price: serializeMoney(row.price_cents, row.price_currency),
     createdAt: row.created_at.toISOString(),
+    alreadyReviewed: row.already_reviewed === true,
     class: cls || undefined,
   };
 }

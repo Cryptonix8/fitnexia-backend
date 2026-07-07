@@ -86,6 +86,15 @@ router.get(
   }),
 );
 
+router.get(
+  '/unread-by-tab',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await inboxService.getUnreadByTab(req.user.id);
+    res.json(result);
+  }),
+);
+
 router.patch(
   '/:id/read',
   requireAuth,
@@ -100,6 +109,24 @@ router.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const result = await inboxService.markAllRead(req.user.id);
+    res.json(result);
+  }),
+);
+
+router.post(
+  '/mark-tab-read/:tab',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await inboxService.markTabRead(req.user.id, req.params.tab);
+    res.json(result);
+  }),
+);
+
+router.delete(
+  '/:id',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await inboxService.deleteNotification(req.user.id, req.params.id);
     res.json(result);
   }),
 );

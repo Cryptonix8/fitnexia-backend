@@ -84,10 +84,51 @@ async function markAllRead(userId) {
   return { ok: true };
 }
 
+async function deleteNotification(userId, notificationId) {
+  const { rowCount } = await query(
+    `DELETE FROM user_notifications WHERE id = $1 AND user_id = $2`,
+    [notificationId, userId],
+  );
+  if (!rowCount) {
+    const { notFound } = require('../utils/errors');
+    throw notFound('Notification not found');
+  }
+  return { ok: true };
+}
+
+async function getUnreadByTab(userId) {
+  const { rows } = await query(
+    `SELECT COALESCE(data->>'tab', 'other') AS tab, COUNT(*)::int AS cnt
+     FROM user_notifications
+     WHERE user_id = $1 AND read = FALSE
+     GROUP BY COALESCE(data->>'tab', 'other')`,
+    [userId],
+  );
+  const byTab = {};
+  let unread = 0;
+  for (const row of rows) {
+    byTab[row.tab] = row.cnt;
+    unread += row.cnt;
+  }
+  return { byTab, unread };
+}
+
+async function markTabRead(userId, tab) {
+  await query(
+    `UPDATE user_notifications SET read = TRUE, read_at = now()
+     WHERE user_id = $1 AND read = FALSE AND COALESCE(data->>'tab', 'other') = $2`,
+    [userId, tab],
+  );
+  return { ok: true };
+}
+
 module.exports = {
   createInboxNotification,
   listNotifications,
   getUnreadCount,
+  getUnreadByTab,
   markRead,
   markAllRead,
+  markTabRead,
+  deleteNotification,
 };

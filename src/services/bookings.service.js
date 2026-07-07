@@ -227,7 +227,9 @@ async function listMyBookings(user) {
     await completePastBookings(user.id);
   }
   const { rows } = await query(
-    `SELECT b.* FROM bookings b
+    `SELECT b.*, (r.id IS NOT NULL) AS already_reviewed
+     FROM bookings b
+     LEFT JOIN reviews r ON r.booking_id = b.id AND r.removed_at IS NULL
      WHERE b.athlete_user_id = $1
      ORDER BY b.created_at DESC`,
     [user.id],
@@ -241,6 +243,12 @@ async function getBooking(user, id) {
   const { rows } = await query(`SELECT * FROM bookings WHERE id = $1`, [id]);
   if (!rows.length) throw notFound('Booking not found');
   let booking = rows[0];
+
+  const { rows: reviewRows } = await query(
+    `SELECT id FROM reviews WHERE booking_id = $1 AND removed_at IS NULL LIMIT 1`,
+    [id],
+  );
+  booking = { ...booking, already_reviewed: reviewRows.length > 0 };
 
   if (user.role === 'athlete' && booking.athlete_user_id !== user.id) {
     throw forbidden('Not your booking');

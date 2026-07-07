@@ -128,7 +128,12 @@ async function createClass(user, body) {
     ],
   );
 
-  return getClassById(rows[0].id);
+  const created = await getClassById(rows[0].id);
+  void require('./notifications.service')
+    .notifyClassPosted(created.id)
+    .catch((err) => console.warn('[notifications] class posted:', err.message));
+
+  return created;
 }
 
 async function updateClassInternal(user, id, updates) {

@@ -11,6 +11,7 @@ const CLASS_SELECT = `
   i.verified AS instructor_verified,
   i.gender AS instructor_gender,
   i.average_rating,
+  i.review_count,
   inst.name AS institution_name,
   inst.logo_url AS institution_logo_url,
   inst.verified AS institution_verified

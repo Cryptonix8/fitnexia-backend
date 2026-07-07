@@ -7,6 +7,15 @@ const {
 } = require('./institutions.service');
 const { completePastBooking } = require('./bookings.service');
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function assertUuid(value, label = 'id') {
+  if (!UUID_RE.test(String(value))) {
+    throw badRequest(`Invalid ${label}`);
+  }
+}
+
 async function createReview(user, body) {
   const { bookingId, rating, comment } = body;
   if (!bookingId || !rating) {
@@ -61,6 +70,7 @@ async function createReview(user, body) {
 }
 
 async function listInstructorReviews(instructorId) {
+  assertUuid(instructorId, 'instructor id');
   const { rows } = await query(
     `SELECT r.id, r.rating, r.comment, r.response, r.response_at, r.created_at,
             ap.first_name, ap.last_name

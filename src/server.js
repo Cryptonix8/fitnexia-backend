@@ -16,8 +16,9 @@ async function start() {
   console.log('PostgreSQL connected');
 
   const app = createApp();
-  app.listen(port, () => {
+  app.listen(port, '0.0.0.0', () => {
     console.log(`Fitnexia API listening on http://localhost:${port}/v1`);
+    console.log(`Android emulator: http://10.0.2.2:${port}/v1`);
     console.log(`Swagger docs at http://localhost:${port}/docs`);
     if (paymentsEnabled) {
       const mode = mercadopagoAccessToken ? 'Mercado Pago' : 'mock checkout';

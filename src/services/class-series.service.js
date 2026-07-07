@@ -298,10 +298,17 @@ async function createRecurringSeries(user, body) {
     untilDate: horizonDate(ctx.anchorStartAt),
   });
 
+  const firstInstance = instanceIds[0] ? await getClassById(instanceIds[0]) : null;
+  if (firstInstance?.id) {
+    void require('./notifications.service')
+      .notifyClassPosted(firstInstance.id, { instancesCreated: created })
+      .catch((err) => console.warn('[notifications] series posted:', err.message));
+  }
+
   return {
     series: serializeSeriesRow(seriesRow),
     instancesCreated: created,
-    firstInstance: instanceIds[0] ? await getClassById(instanceIds[0]) : null,
+    firstInstance,
   };
 }
 

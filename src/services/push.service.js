@@ -9,6 +9,19 @@ const {
 
 let admin;
 let initialized = false;
+let credentialFailed = false;
+
+function credentialErrorMessage(err) {
+  const message = err?.message || String(err);
+  if (message.includes('invalid_grant') || message.includes('Invalid JWT Signature')) {
+    return (
+      '[push] Firebase service account is invalid or revoked. ' +
+      'Regenerate the key in Firebase Console → Project settings → Service accounts, ' +
+      'update FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_SERVICE_ACCOUNT_JSON, then restart the API.'
+    );
+  }
+  return `[push] Firebase init failed: ${message}`;
+}
 
 function resolveServiceAccountPath() {
   if (!firebaseServiceAccountPath) return null;
@@ -20,7 +33,7 @@ function resolveServiceAccountPath() {
 
 function initFirebase() {
   if (initialized) return admin;
-  if (!firebaseEnabled) return null;
+  if (!firebaseEnabled || credentialFailed) return null;
 
   try {
     admin = require('firebase-admin');
@@ -46,7 +59,10 @@ function initFirebase() {
     initialized = true;
     return admin;
   } catch (err) {
-    console.warn('[push] Firebase init failed:', err.message);
+    if (err?.message?.includes('invalid_grant') || err?.message?.includes('Invalid JWT Signature')) {
+      credentialFailed = true;
+    }
+    console.warn(credentialErrorMessage(err));
     return null;
   }
 }
@@ -75,6 +91,7 @@ async function sendPushToTokens(tokens, { title, body, data = {} }) {
   });
 
   const invalidTokens = [];
+  let credentialError = false;
   response.responses.forEach((result, index) => {
     if (result.success) return;
     const code = result.error?.code;
@@ -83,10 +100,18 @@ async function sendPushToTokens(tokens, { title, body, data = {} }) {
       code === 'messaging/invalid-registration-token'
     ) {
       invalidTokens.push(tokens[index]);
+    } else if (code === 'app/invalid-credential') {
+      credentialError = true;
+      console.warn(credentialErrorMessage(result.error));
     } else {
       console.warn('[push] Send failed:', code, result.error?.message);
     }
   });
+
+  if (credentialError) {
+    credentialFailed = true;
+    return { sent: 0, invalidTokens: [] };
+  }
 
   return { sent: response.successCount, invalidTokens };
 }

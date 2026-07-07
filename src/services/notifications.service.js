@@ -2,13 +2,19 @@ const { query } = require('../db/pool');
 const { sendPushToTokens } = require('./push.service');
 const { listDeviceTokens, deleteTokens } = require('./notifications-devices.service');
 const inboxService = require('./notifications-inbox.service');
+const copy = require('./notification-copy');
+const { tabForNotification } = require('./notification-tabs');
 
 const PREF_BY_TYPE = {
   password_reset: null,
   booking_confirmed: 'bookingConfirmed',
+  class_scheduled: 'bookingConfirmed',
   payment_confirmed: 'paymentUpdates',
   class_reminder_24h: 'classReminders',
   class_reminder_1h: 'classReminders',
+  class_reminder_10m: 'classReminders',
+  class_posted: null,
+  class_ended: 'classReminders',
   instructor_invite: null,
   review_invite: 'reviewInvites',
   membership_invite: null,
@@ -27,9 +33,9 @@ const PREF_BY_TYPE = {
   court_reservation_confirmed: 'bookingConfirmed',
 };
 
-function buildDedupeKey(userId, type, { bookingId, inviteId, memberId, dueDate } = {}) {
+function buildDedupeKey(userId, type, { bookingId, inviteId, memberId, dueDate, classId } = {}) {
   const dueKey = dueDate ? new Date(dueDate).toISOString().slice(0, 10) : '-';
-  return [userId, type, bookingId || '-', inviteId || '-', memberId || '-', dueKey].join(':');
+  return [userId, type, bookingId || '-', inviteId || '-', memberId || '-', classId || '-', dueKey].join(':');
 }
 
 function formatClassWhen(startAt) {
@@ -99,6 +105,7 @@ async function dispatchPush({
   bookingId = null,
   inviteId = null,
   memberId = null,
+  classId = null,
   dueDate = null,
   skipDedupe = false,
 }) {
@@ -108,7 +115,7 @@ async function dispatchPush({
       return { sent: false, reason: 'pref_disabled' };
     }
 
-    const dedupeKey = buildDedupeKey(userId, type, { bookingId, inviteId, memberId, dueDate });
+    const dedupeKey = buildDedupeKey(userId, type, { bookingId, inviteId, memberId, dueDate, classId });
     if (!skipDedupe) {
       const claimed = await claimDelivery(userId, type, dedupeKey, {
         bookingId,
@@ -146,12 +153,28 @@ async function getBookingContext(bookingId) {
   const { rows } = await query(
     `SELECT b.id, b.athlete_user_id, b.status, b.price_cents, b.price_currency,
             c.id AS class_id, c.title AS class_title, c.start_at,
-            i.user_id AS instructor_user_id
+            i.user_id AS instructor_user_id,
+            ap.first_name AS athlete_first_name, ap.last_name AS athlete_last_name
      FROM bookings b
      JOIN classes c ON c.id = b.class_id
      JOIN instructors i ON i.id = c.instructor_id
+     LEFT JOIN athlete_profiles ap ON ap.user_id = b.athlete_user_id
      WHERE b.id = $1`,
     [bookingId],
+  );
+  return rows[0] || null;
+}
+
+async function getClassPublishContext(classId) {
+  const { rows } = await query(
+    `SELECT c.id, c.title, c.start_at, c.series_id,
+            i.user_id AS instructor_user_id,
+            inst.user_id AS institution_user_id
+     FROM classes c
+     JOIN instructors i ON i.id = c.instructor_id
+     LEFT JOIN institutions inst ON inst.id = c.institution_id
+     WHERE c.id = $1`,
+    [classId],
   );
   return rows[0] || null;
 }
@@ -171,22 +194,27 @@ async function notifyBookingConfirmed(bookingId, { skipAthlete = false } = {}) {
   const ctx = await getBookingContext(bookingId);
   if (!ctx) return;
 
-  const when = formatClassWhen(ctx.start_at);
-  const athleteBody = `${ctx.class_title}${when ? ` — ${when}` : ''}`;
-  const instructorBody = `Un atleta reservó: ${athleteBody}`;
+  const when = copy.formatWhen(ctx.start_at);
+  const athleteCopy = copy.classScheduledAthlete({ title: ctx.class_title, when });
+  const instructorCopy = copy.classScheduledInstructor({
+    title: ctx.class_title,
+    when,
+    athleteName: copy.athleteName(ctx),
+  });
 
   const tasks = [];
   if (!skipAthlete) {
     tasks.push(
       dispatchPush({
         userId: ctx.athlete_user_id,
-        type: 'booking_confirmed',
-        title: 'Reserva confirmada',
-        body: athleteBody,
+        type: 'class_scheduled',
+        title: athleteCopy.title,
+        body: athleteCopy.body,
         bookingId,
         data: {
           bookingId,
           classId: ctx.class_id,
+          tab: tabForNotification('class_scheduled', 'athlete'),
           screen: '/(athlete)/(tabs)/bookings',
         },
       }),
@@ -197,12 +225,13 @@ async function notifyBookingConfirmed(bookingId, { skipAthlete = false } = {}) {
     dispatchPush({
       userId: ctx.instructor_user_id,
       type: 'booking_confirmed',
-      title: 'Nueva reserva',
-      body: instructorBody,
+      title: instructorCopy.title,
+      body: instructorCopy.body,
       bookingId,
       data: {
         bookingId,
         classId: ctx.class_id,
+        tab: tabForNotification('booking_confirmed', 'instructor'),
         screen: '/(instructor)/(tabs)/dashboard',
       },
     }),
@@ -216,39 +245,146 @@ async function notifyPaymentConfirmed(bookingId) {
   if (!ctx) return;
 
   const amount = (ctx.price_cents / 100).toFixed(2);
-  const body = `${ctx.class_title} — ${amount} ${ctx.price_currency || 'UYU'}`;
+  const currency = ctx.price_currency || 'UYU';
+  const { title, body } = copy.paymentConfirmed({
+    title: ctx.class_title,
+    amount,
+    currency,
+  });
 
   await dispatchPush({
     userId: ctx.athlete_user_id,
     type: 'payment_confirmed',
-    title: 'Pago confirmado',
-    body,
-    bookingId,
-    data: {
-      bookingId,
-      classId: ctx.class_id,
-      screen: '/(athlete)/(tabs)/bookings',
-    },
-  });
-}
-
-async function notifyClassReminder({ bookingId, athleteUserId, classId, classTitle, startAt, hoursBefore }) {
-  const type = hoursBefore === 24 ? 'class_reminder_24h' : 'class_reminder_1h';
-  const when = formatClassWhen(startAt);
-  const title =
-    hoursBefore === 24 ? 'Tu clase es mañana' : 'Tu clase empieza en 1 hora';
-  const body = `${classTitle}${when ? ` — ${when}` : ''}`;
-
-  return dispatchPush({
-    userId: athleteUserId,
-    type,
     title,
     body,
     bookingId,
     data: {
       bookingId,
+      classId: ctx.class_id,
+      tab: tabForNotification('payment_confirmed', 'athlete'),
+      screen: '/(athlete)/(tabs)/bookings',
+    },
+  });
+}
+
+async function notifyClassPosted(classId, { instancesCreated = 1 } = {}) {
+  const ctx = await getClassPublishContext(classId);
+  if (!ctx) return;
+
+  const when = copy.formatWhen(ctx.start_at);
+  const isSeries = Boolean(ctx.series_id) || instancesCreated > 1;
+  const { title, body } = copy.classPosted({
+    title: ctx.title,
+    when,
+    isSeries,
+    instanceCount: instancesCreated,
+  });
+
+  const payload = {
+    type: 'class_posted',
+    title,
+    body,
+    data: {
       classId,
-      screen: `/class/${classId}`,
+      tab: tabForNotification('class_posted', 'instructor'),
+      screen: '/(instructor)/(tabs)/classes',
+    },
+  };
+
+  const tasks = [
+    dispatchPush({
+      userId: ctx.instructor_user_id,
+      ...payload,
+      classId,
+    }),
+  ];
+
+  if (ctx.institution_user_id && ctx.institution_user_id !== ctx.instructor_user_id) {
+    tasks.push(
+      dispatchPush({
+        userId: ctx.institution_user_id,
+        ...payload,
+        classId,
+        data: {
+          classId,
+          tab: tabForNotification('class_posted', 'institution'),
+          screen: '/(gym)/(tabs)/classes',
+        },
+      }),
+    );
+  }
+
+  await Promise.all(tasks);
+}
+
+async function notifyClassEnded({ bookingId, athleteUserId, instructorUserId, classId, classTitle, startAt }) {
+  const when = copy.formatWhen(startAt);
+  const athleteCopy = copy.classEndedAthlete({ title: classTitle, when });
+  const instructorCopy = copy.classEndedInstructor({ title: classTitle, when });
+
+  await Promise.all([
+    dispatchPush({
+      userId: athleteUserId,
+      type: 'class_ended',
+      title: athleteCopy.title,
+      body: athleteCopy.body,
+      bookingId,
+      data: {
+        bookingId,
+        classId,
+        tab: tabForNotification('class_ended', 'athlete'),
+        screen: '/(athlete)/(tabs)/bookings',
+      },
+    }),
+    dispatchPush({
+      userId: instructorUserId,
+      type: 'class_ended',
+      title: instructorCopy.title,
+      body: instructorCopy.body,
+      bookingId,
+      data: {
+        bookingId,
+        classId,
+        tab: tabForNotification('class_ended', 'instructor'),
+        screen: '/(instructor)/(tabs)/calendar',
+      },
+    }),
+  ]);
+}
+
+async function notifyClassReminder({
+  bookingId,
+  athleteUserId,
+  classId,
+  classTitle,
+  startAt,
+  hoursBefore,
+  minutesBefore,
+}) {
+  let type;
+  let copyBlock;
+  if (hoursBefore === 24) {
+    type = 'class_reminder_24h';
+    copyBlock = copy.classReminder24h({ title: classTitle, when: startAt });
+  } else if (hoursBefore === 1) {
+    type = 'class_reminder_1h';
+    copyBlock = copy.classReminder1h({ title: classTitle, when: startAt });
+  } else {
+    type = 'class_reminder_10m';
+    copyBlock = copy.classReminder10m({ title: classTitle });
+  }
+
+  return dispatchPush({
+    userId: athleteUserId,
+    type,
+    title: copyBlock.title,
+    body: copyBlock.body,
+    bookingId,
+    data: {
+      bookingId,
+      classId,
+      tab: tabForNotification(type, 'athlete'),
+      screen: classId ? `/class/${classId}` : '/(athlete)/(tabs)/bookings',
     },
   });
 }
@@ -274,15 +410,17 @@ async function notifyInstructorInvite({ inviteId, email, institutionName }) {
 }
 
 async function notifyReviewInvite({ bookingId, athleteUserId, classId, classTitle }) {
+  const { title, body } = copy.reviewInvite({ title: classTitle });
   return dispatchPush({
     userId: athleteUserId,
     type: 'review_invite',
-    title: '¿Cómo estuvo la clase?',
-    body: `Dejá una reseña de ${classTitle}`,
+    title,
+    body,
     bookingId,
     data: {
       bookingId,
       classId,
+      tab: tabForNotification('review_invite', 'athlete'),
       screen: `/review/${bookingId}`,
     },
   });
@@ -369,23 +507,25 @@ async function notifyClubArrearsAlert({ userId, overdueCount, institutionName })
 }
 
 async function notifyVerificationApproved({ userId, displayName }) {
+  const { title, body } = copy.verificationApproved({ displayName });
   return dispatchPush({
     userId,
     type: 'verification_approved',
-    title: 'Perfil verificado',
-    body: `¡Felicitaciones ${displayName}! Tu perfil ya tiene la insignia Fitnexia.`,
-    data: { screen: '/profile/verify' },
+    title,
+    body,
+    data: { tab: 'profile', screen: '/profile/verify' },
   });
 }
 
 async function notifyVerificationRejected({ userId, displayName, reason }) {
   const preview = reason.length > 80 ? `${reason.slice(0, 77)}…` : reason;
+  const { title, body } = copy.verificationRejected({ displayName, preview });
   return dispatchPush({
     userId,
     type: 'verification_rejected',
-    title: 'Verificación no aprobada',
-    body: `${displayName}, revisá el motivo y podés volver a intentar. ${preview}`,
-    data: { screen: '/profile/verify' },
+    title,
+    body,
+    data: { tab: 'profile', screen: '/profile/verify' },
   });
 }
 
@@ -429,17 +569,22 @@ async function notifyClassInstanceCancelled(classId) {
   if (!ctx) return;
 
   const athletes = await listBookedAthletesForClass(classId);
-  const when = formatClassWhen(ctx.start_at);
   const emailService = require('./email.service');
 
   await Promise.all(
     athletes.map(async (athlete) => {
+      const when = copy.formatWhen(ctx.start_at);
+      const { title, body } = copy.classCancelled({ title: ctx.title, when });
       await dispatchPush({
         userId: athlete.athlete_user_id,
         type: 'class_cancelled_by_instructor',
-        title: 'Clase cancelada',
-        body: `${ctx.title}${when ? ` — ${when}` : ''} fue cancelada. Recibirás reembolso si corresponde.`,
-        data: { classId, screen: '/(athlete)/(tabs)/bookings' },
+        title,
+        body,
+        data: {
+          classId,
+          tab: tabForNotification('class_cancelled_by_instructor', 'athlete'),
+          screen: '/(athlete)/(tabs)/bookings',
+        },
       });
       if (athlete.email && emailService.isEmailEnabled()) {
         await emailService.sendClassCancelledEmail({
@@ -458,17 +603,22 @@ async function notifyClassInstanceUpdated(classId) {
   if (!ctx) return;
 
   const athletes = await listBookedAthletesForClass(classId);
-  const when = formatClassWhen(ctx.start_at);
   const emailService = require('./email.service');
 
   await Promise.all(
     athletes.map(async (athlete) => {
+      const when = copy.formatWhen(ctx.start_at);
+      const { title, body } = copy.classUpdated({ title: ctx.title, when });
       await dispatchPush({
         userId: athlete.athlete_user_id,
         type: 'class_updated_by_instructor',
-        title: 'Clase actualizada',
-        body: `${ctx.title}${when ? ` — ${when}` : ''} fue modificada.`,
-        data: { classId, screen: `/class/${classId}` },
+        title,
+        body,
+        data: {
+          classId,
+          tab: tabForNotification('class_updated_by_instructor', 'athlete'),
+          screen: `/class/${classId}`,
+        },
       });
       if (athlete.email && emailService.isEmailEnabled()) {
         await emailService.sendClassUpdatedEmail({
@@ -539,6 +689,8 @@ module.exports = {
   notifyPasswordReset,
   notifyBookingConfirmed,
   notifyPaymentConfirmed,
+  notifyClassPosted,
+  notifyClassEnded,
   notifyClassReminder,
   notifyInstructorInvite,
   notifyReviewInvite,
