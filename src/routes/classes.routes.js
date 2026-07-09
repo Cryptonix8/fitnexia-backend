@@ -49,6 +49,8 @@ router.get(
   }),
 );
 
+router.use('/:id/stream', require('./live-stream.routes'));
+
 router.patch(
   '/:id',
   requireAuth,

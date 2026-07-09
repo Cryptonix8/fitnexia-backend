@@ -1,8 +1,10 @@
-const { query } = require('../db/pool');
+const { query, pool } = require('../db/pool');
 const { notFound, forbidden, badRequest, conflict } = require('../utils/errors');
 const { getInstitutionByUserId } = require('./institutions.service');
 const notificationsService = require('./notifications.service');
 const emailService = require('./email.service');
+const paymentsService = require('./payments.service');
+const marketplaceService = require('./marketplace.service');
 
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
@@ -39,12 +41,13 @@ function serializePricingRule(row) {
   };
 }
 
-function serializeReservation(row) {
+function serializeReservation(row, extras = {}) {
   return {
     id: row.id,
     courtId: row.court_id,
     institutionId: row.institution_id,
     courtName: row.court_name,
+    institutionName: row.institution_name,
     startAt: row.start_at.toISOString(),
     endAt: row.end_at.toISOString(),
     durationMinutes: row.duration_minutes,
@@ -52,6 +55,20 @@ function serializeReservation(row) {
     price: { amount: row.price_cents, currency: row.price_currency },
     isMemberRate: row.is_member_rate,
     createdAt: row.created_at.toISOString(),
+    cancellationPolicyHours: extras.cancellationPolicyHours,
+    canCancel: extras.canCancel,
+    refundEligible: extras.refundEligible,
+  };
+}
+
+async function getInstitutionCourtSettings(institutionId) {
+  const { rows } = await query(
+    `SELECT cancellation_policy_hours, default_slot_minutes FROM institution_court_settings WHERE institution_id = $1`,
+    [institutionId],
+  );
+  return {
+    cancellationPolicyHours: rows[0]?.cancellation_policy_hours ?? 24,
+    defaultSlotMinutes: rows[0]?.default_slot_minutes ?? 60,
   };
 }
 
@@ -345,12 +362,49 @@ async function getSchedule(institutionId, { courtId, date }) {
   return result;
 }
 
+function reservationCancelMeta(reservation, policyHours) {
+  const hoursUntil = (new Date(reservation.start_at).getTime() - Date.now()) / (1000 * 60 * 60);
+  const cancellable = ['pending_payment', 'confirmed'].includes(reservation.status);
+  const withinPolicy = hoursUntil >= policyHours;
+  return {
+    canCancel: cancellable && withinPolicy,
+    refundEligible: reservation.status === 'confirmed' && withinPolicy,
+    cancellationPolicyHours: policyHours,
+  };
+}
+
+function quoteTotalPrice(ruleRows, { courtId, startAt, durationMinutes, isMember, slotMinutes }) {
+  let totalCents = 0;
+  let currency = 'UYU';
+  let isMemberRate = isMember;
+  let cursor = new Date(startAt);
+  const end = new Date(cursor.getTime() + durationMinutes * 60 * 1000);
+
+  while (cursor < end) {
+    const segmentEnd = new Date(Math.min(cursor.getTime() + slotMinutes * 60 * 1000, end.getTime()));
+    const segmentMinutes = Math.round((segmentEnd.getTime() - cursor.getTime()) / 60000);
+    const price = resolvePrice(ruleRows, {
+      courtId,
+      startAt: cursor.toISOString(),
+      isMember,
+    });
+    if (!price) return null;
+    const fraction = segmentMinutes / slotMinutes;
+    totalCents += Math.round(price.amount * fraction);
+    currency = price.currency;
+    isMemberRate = price.isMemberRate;
+    cursor = segmentEnd;
+  }
+
+  return { amount: totalCents, currency, isMemberRate };
+}
+
 async function createReservation(user, body) {
   if (user.role !== 'athlete') {
     throw forbidden('Only athletes can book courts');
   }
 
-  const { courtId, startAt, durationMinutes } = body;
+  const { courtId, startAt, durationMinutes, recurringShiftId } = body;
   if (!courtId || !startAt || !durationMinutes) {
     throw badRequest('courtId, startAt, and durationMinutes are required');
   }
@@ -387,43 +441,93 @@ async function createReservation(user, body) {
      WHERE institution_id = $1 AND active = TRUE`,
     [court.institution_id],
   );
-  const price = resolvePrice(ruleRows, {
+
+  const { rows: settingsRows } = await query(
+    `SELECT default_slot_minutes FROM institution_court_settings WHERE institution_id = $1`,
+    [court.institution_id],
+  );
+  const slotMinutes = settingsRows[0]?.default_slot_minutes || 60;
+
+  const price = quoteTotalPrice(ruleRows, {
     courtId,
     startAt: start.toISOString(),
+    durationMinutes,
     isMember,
+    slotMinutes,
   });
   if (!price) {
     throw badRequest('No pricing rule applies to this time slot');
   }
 
-  const initialStatus = 'confirmed';
-
-  const { rows } = await query(
-    `INSERT INTO court_reservations (
-      court_id, institution_id, athlete_user_id, club_member_id,
-      start_at, end_at, duration_minutes, status, price_cents, price_currency, is_member_rate
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-    RETURNING *`,
-    [
-      courtId,
+  const usePayments = paymentsService.isPaymentsActive();
+  if (usePayments) {
+    const { rows: institutionRows } = await query(`SELECT * FROM institutions WHERE id = $1`, [
       court.institution_id,
-      user.id,
-      memberId,
-      start.toISOString(),
-      end.toISOString(),
-      durationMinutes,
-      initialStatus,
-      price.amount,
-      price.currency,
-      price.isMemberRate,
-    ],
-  );
+    ]);
+    await marketplaceService.resolveInstitutionCheckoutSplit(institutionRows[0], price.amount);
+  }
 
-  const reservation = rows[0];
-  await sendReservationNotifications(user, court, reservation);
+  const initialStatus = usePayments ? 'pending_payment' : 'confirmed';
 
-  const full = await getReservationById(reservation.id);
-  return { reservation: full };
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
+      `INSERT INTO court_reservations (
+        court_id, institution_id, athlete_user_id, club_member_id,
+        start_at, end_at, duration_minutes, status, price_cents, price_currency, is_member_rate,
+        recurring_shift_id
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      RETURNING *`,
+      [
+        courtId,
+        court.institution_id,
+        user.id,
+        memberId,
+        start.toISOString(),
+        end.toISOString(),
+        durationMinutes,
+        initialStatus,
+        price.amount,
+        price.currency,
+        price.isMemberRate,
+        recurringShiftId || null,
+      ],
+    );
+
+    const reservation = rows[0];
+    let checkoutUrl;
+
+    if (usePayments) {
+      const { rows: institutionRows } = await client.query(`SELECT * FROM institutions WHERE id = $1`, [
+        court.institution_id,
+      ]);
+      const payment = await paymentsService.createPaymentForCourtReservation(
+        client,
+        reservation,
+        court,
+        institutionRows[0],
+      );
+      checkoutUrl = payment.checkout_url;
+    } else {
+      await sendReservationNotifications(user, court, reservation);
+    }
+
+    await client.query('COMMIT');
+
+    const full = await getReservationById(reservation.id);
+    return {
+      reservation: full,
+      checkoutUrl,
+      paymentRequired: usePayments,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 async function sendReservationNotifications(user, court, reservation) {
@@ -432,7 +536,7 @@ async function sendReservationNotifications(user, court, reservation) {
     type: 'court_reservation_confirmed',
     title: 'Reserva de cancha confirmada',
     body: `${court.name} — ${new Date(reservation.start_at).toLocaleString('es-UY')}`,
-    data: { screen: '/(athlete)/courts/my-reservations', reservationId: reservation.id },
+    data: { screen: '/(athlete)/courts/reservations', reservationId: reservation.id },
   });
 
   if (user.email) {
@@ -448,28 +552,56 @@ async function sendReservationNotifications(user, court, reservation) {
   }
 }
 
-async function getReservationById(id) {
+async function notifyReservationConfirmed(reservationId) {
   const { rows } = await query(
-    `SELECT r.*, c.name AS court_name
+    `SELECT r.*, c.name AS court_name, u.email
      FROM court_reservations r
      JOIN courts c ON c.id = r.court_id
+     JOIN users u ON u.id = r.athlete_user_id
+     WHERE r.id = $1`,
+    [reservationId],
+  );
+  if (!rows.length) return;
+  const row = rows[0];
+  await sendReservationNotifications(
+    { id: row.athlete_user_id, email: row.email },
+    { name: row.court_name },
+    row,
+  );
+}
+
+async function getReservationById(id) {
+  const { rows } = await query(
+    `SELECT r.*, c.name AS court_name, i.name AS institution_name
+     FROM court_reservations r
+     JOIN courts c ON c.id = r.court_id
+     JOIN institutions i ON i.id = r.institution_id
      WHERE r.id = $1`,
     [id],
   );
   if (!rows.length) throw notFound('Reservation not found');
-  return serializeReservation(rows[0]);
+  const settings = await getInstitutionCourtSettings(rows[0].institution_id);
+  const meta = reservationCancelMeta(rows[0], settings.cancellationPolicyHours);
+  return serializeReservation(rows[0], meta);
 }
 
 async function listMyReservations(user) {
   const { rows } = await query(
-    `SELECT r.*, c.name AS court_name
+    `SELECT r.*, c.name AS court_name, i.name AS institution_name
      FROM court_reservations r
      JOIN courts c ON c.id = r.court_id
+     JOIN institutions i ON i.id = r.institution_id
      WHERE r.athlete_user_id = $1
      ORDER BY r.start_at DESC`,
     [user.id],
   );
-  return rows.map(serializeReservation);
+  return Promise.all(
+    rows.map(async (row) => {
+      const settings = await getInstitutionCourtSettings(row.institution_id);
+      const meta = reservationCancelMeta(row, settings.cancellationPolicyHours);
+      return serializeReservation(row, meta);
+    }),
+  );
 }
 
 async function listInstitutionReservations(userId, { date, courtId } = {}) {
@@ -496,7 +628,13 @@ async function listInstitutionReservations(userId, { date, courtId } = {}) {
      ORDER BY r.start_at ASC`,
     values,
   );
-  return rows.map(serializeReservation);
+  return Promise.all(
+    rows.map(async (row) => {
+      const settings = await getInstitutionCourtSettings(row.institution_id);
+      const meta = reservationCancelMeta(row, settings.cancellationPolicyHours);
+      return serializeReservation(row, meta);
+    }),
+  );
 }
 
 async function cancelReservation(user, reservationId) {
@@ -518,26 +656,27 @@ async function cancelReservation(user, reservationId) {
     throw badRequest('Reservation cannot be cancelled');
   }
 
-  const { rows: settingsRows } = await query(
-    `SELECT cancellation_policy_hours FROM institution_court_settings WHERE institution_id = $1`,
-    [reservation.institution_id],
-  );
-  const policyHours = settingsRows[0]?.cancellation_policy_hours ?? 24;
+  const settings = await getInstitutionCourtSettings(reservation.institution_id);
+  const policyHours = settings.cancellationPolicyHours;
+  const meta = reservationCancelMeta(reservation, policyHours);
 
-  const hoursUntil =
-    (new Date(reservation.start_at).getTime() - Date.now()) / (1000 * 60 * 60);
-  const refundEligible =
-    reservation.status === 'confirmed' && hoursUntil >= policyHours;
+  if (user.role === 'athlete' && !meta.canCancel) {
+    throw badRequest(
+      `Cancellation is only allowed at least ${policyHours} hours before the reservation`,
+    );
+  }
 
-  if (refundEligible && reservation.provider_payment_id) {
-    try {
-      await paymentsService.refundPaymentForBooking(reservation.id);
-    } catch {
-      /* court refund fallback */
-    }
+  if (meta.refundEligible) {
+    await paymentsService.refundPaymentForCourtReservation(reservationId);
+  } else if (reservation.status === 'pending_payment') {
     await query(
-      `UPDATE court_reservations SET status = 'refunded', cancelled_at = now(), updated_at = now()
+      `UPDATE court_reservations SET status = 'cancelled', cancelled_at = now(), updated_at = now()
        WHERE id = $1`,
+      [reservationId],
+    );
+    await query(
+      `UPDATE payments SET status = 'cancelled', updated_at = now()
+       WHERE court_reservation_id = $1 AND status = 'pending'`,
       [reservationId],
     );
   } else {
@@ -561,26 +700,46 @@ async function quotePrice(user, { courtId, startAt, durationMinutes }) {
 
   const memberId = user?.id ? await isActiveMember(user.id, court.institution_id) : null;
   const isMember = Boolean(memberId);
+  const settings = await getInstitutionCourtSettings(court.institution_id);
+  const slotMinutes = settings.defaultSlotMinutes;
+  const duration = durationMinutes || slotMinutes;
 
   const { rows: ruleRows } = await query(
     `SELECT * FROM court_pricing_rules WHERE institution_id = $1 AND active = TRUE`,
     [court.institution_id],
   );
 
-  const price = resolvePrice(ruleRows, { courtId, startAt, isMember });
-  if (!price) throw badRequest('No pricing rule applies to this time slot');
+  const applied = quoteTotalPrice(ruleRows, {
+    courtId,
+    startAt,
+    durationMinutes: duration,
+    isMember,
+    slotMinutes,
+  });
+  if (!applied) throw badRequest('No pricing rule applies to this time slot');
+
+  const sampleRule = ruleRows.find((r) => !r.court_id || r.court_id === courtId);
 
   return {
-    memberPrice: { amount: ruleRows.find((r) => !r.court_id || r.court_id === courtId)?.member_price_cents ?? price.amount, currency: price.currency },
-    nonMemberPrice: { amount: ruleRows.find((r) => !r.court_id || r.court_id === courtId)?.non_member_price_cents ?? price.amount, currency: price.currency },
-    appliedPrice: { amount: price.amount, currency: price.currency },
-    isMemberRate: price.isMemberRate,
-    durationMinutes,
+    memberPrice: {
+      amount: sampleRule?.member_price_cents ?? applied.amount,
+      currency: applied.currency,
+    },
+    nonMemberPrice: {
+      amount: sampleRule?.non_member_price_cents ?? applied.amount,
+      currency: applied.currency,
+    },
+    appliedPrice: { amount: applied.amount, currency: applied.currency },
+    isMemberRate: applied.isMemberRate,
+    durationMinutes: duration,
+    slotMinutes,
+    cancellationPolicyHours: settings.cancellationPolicyHours,
   };
 }
 
 module.exports = {
   getCourtSettings,
+  getInstitutionCourtSettings,
   updateCourtSettings,
   listCourts,
   listCourtsPublic,
@@ -597,4 +756,5 @@ module.exports = {
   cancelReservation,
   quotePrice,
   getReservationById,
+  notifyReservationConfirmed,
 };

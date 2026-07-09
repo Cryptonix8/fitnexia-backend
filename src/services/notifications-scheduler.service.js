@@ -84,6 +84,10 @@ async function runScheduledNotifications() {
   await membershipsService.runMembershipScheduler();
   const verificationService = require('./verification.service');
   await verificationService.processPendingReminders();
+  const creditsService = require('./credits.service');
+  await creditsService.processExpiringCreditAlerts();
+  const courtShiftsService = require('./court-shifts.service');
+  await courtShiftsService.processDueRecurringShifts();
 }
 
 function startNotificationScheduler() {

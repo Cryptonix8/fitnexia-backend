@@ -87,6 +87,25 @@ async function expireStalePendingBookings(classId = null) {
        AND ap.created_at < now() - ($1 || ' minutes')::interval`,
     [paymentPendingMinutes],
   );
+
+  await query(
+    `UPDATE court_reservations cr
+     SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+     WHERE cr.status = 'pending_payment'
+       AND cr.created_at < now() - ($1 || ' minutes')::interval`,
+    [paymentPendingMinutes],
+  );
+
+  await query(
+    `UPDATE payments p
+     SET status = 'cancelled', updated_at = now()
+     FROM court_reservations cr
+     WHERE p.court_reservation_id = cr.id
+       AND p.status = 'pending'
+       AND cr.status = 'cancelled'
+       AND cr.created_at < now() - ($1 || ' minutes')::interval`,
+    [paymentPendingMinutes],
+  );
 }
 
 async function insertPaymentRow(
@@ -94,6 +113,7 @@ async function insertPaymentRow(
   {
     bookingId = null,
     athletePassId = null,
+    courtReservationId = null,
     preferenceId,
     amountCents,
     currency,
@@ -103,14 +123,15 @@ async function insertPaymentRow(
 ) {
   const { rows } = await client.query(
     `INSERT INTO payments (
-      booking_id, athlete_pass_id, provider, preference_id, status,
+      booking_id, athlete_pass_id, court_reservation_id, provider, preference_id, status,
       amount_cents, currency, checkout_url,
       seller_collector_id, seller_type, platform_fee_cents, seller_net_cents, split_mode
-    ) VALUES ($1, $2, 'mercado_pago', $3, 'pending', $4, $5, $6, $7, $8, $9, $10, $11)
+    ) VALUES ($1, $2, $3, 'mercado_pago', $4, 'pending', $5, $6, $7, $8, $9, $10, $11, $12)
     RETURNING *`,
     [
       bookingId,
       athletePassId,
+      courtReservationId,
       preferenceId,
       amountCents,
       currency,
@@ -228,6 +249,54 @@ async function createPaymentForPass(client, passRow, product, returnBookingId, c
   return payment;
 }
 
+async function createPaymentForCourtReservation(client, reservationRow, courtRow, institutionRow) {
+  let preferenceId = null;
+  let checkoutUrl = null;
+  const externalReference = `court:${reservationRow.id}`;
+  const split = await marketplaceService.resolveInstitutionCheckoutSplit(
+    institutionRow,
+    reservationRow.price_cents,
+  );
+
+  if (isMercadoPagoConfigured()) {
+    const preference = await createCheckoutPreference({
+      externalReference,
+      title: `Reserva ${courtRow.name}`,
+      amountCents: reservationRow.price_cents,
+      currency: reservationRow.price_currency,
+      returnCourtReservationId: reservationRow.id,
+      collectorId: split.collectorId,
+      marketplaceFee: split.marketplaceFee,
+    });
+    preferenceId = preference.preferenceId;
+    checkoutUrl = preference.checkoutUrl;
+  } else if (useMockPayments()) {
+    checkoutUrl = null;
+  } else {
+    throw badRequest('Payments are not configured');
+  }
+
+  const payment = await insertPaymentRow(client, {
+    courtReservationId: reservationRow.id,
+    preferenceId,
+    amountCents: reservationRow.price_cents,
+    currency: reservationRow.price_currency,
+    checkoutUrl,
+    split,
+  });
+
+  if (useMockPayments() && !checkoutUrl) {
+    checkoutUrl = buildMockCheckoutUrl(payment.id);
+    await client.query(`UPDATE payments SET checkout_url = $1, updated_at = now() WHERE id = $2`, [
+      checkoutUrl,
+      payment.id,
+    ]);
+    payment.checkout_url = checkoutUrl;
+  }
+
+  return payment;
+}
+
 async function confirmPassPayment(passId, providerPaymentId = null) {
   const pass = await passesService.activatePass(passId, providerPaymentId);
 
@@ -313,6 +382,126 @@ async function notifyAfterPaymentConfirmed(bookingId) {
   });
 }
 
+async function confirmCourtReservationPayment(reservationId, providerPaymentId = null) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT * FROM court_reservations WHERE id = $1 FOR UPDATE`,
+      [reservationId],
+    );
+    if (!rows.length) throw notFound('Reservation not found');
+    const reservation = rows[0];
+    if (reservation.status === 'confirmed') {
+      await client.query('COMMIT');
+      return reservation;
+    }
+    if (reservation.status !== 'pending_payment') {
+      throw badRequest('Reservation is not pending payment');
+    }
+
+    await client.query(
+      `UPDATE court_reservations SET status = 'confirmed', updated_at = now() WHERE id = $1`,
+      [reservationId],
+    );
+    await client.query(
+      `UPDATE payments
+       SET status = 'approved', provider_payment_id = COALESCE($2, provider_payment_id), updated_at = now()
+       WHERE court_reservation_id = $1 AND status = 'pending'`,
+      [reservationId, providerPaymentId],
+    );
+    await client.query('COMMIT');
+
+    const courtsService = require('./courts.service');
+    courtsService.notifyReservationConfirmed(reservationId).catch((err) => {
+      console.warn('[payments] court reservation notify failed:', err.message);
+    });
+
+    return { ...reservation, status: 'confirmed' };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function rejectCourtReservationPayment(reservationId, providerPaymentId = null) {
+  await query(
+    `UPDATE court_reservations SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+     WHERE id = $1 AND status = 'pending_payment'`,
+    [reservationId],
+  );
+  await query(
+    `UPDATE payments
+     SET status = 'rejected', provider_payment_id = COALESCE($2, provider_payment_id), updated_at = now()
+     WHERE court_reservation_id = $1 AND status = 'pending'`,
+    [reservationId, providerPaymentId],
+  );
+}
+
+async function syncCourtReservationPayment(reservationId) {
+  const { rows } = await query(`SELECT * FROM court_reservations WHERE id = $1`, [reservationId]);
+  if (!rows.length) throw notFound('Reservation not found');
+  const reservation = rows[0];
+
+  if (reservation.status === 'confirmed') {
+    return { synced: true, reservationId, status: 'confirmed' };
+  }
+  if (reservation.status !== 'pending_payment') {
+    return { synced: false, reservationId, status: reservation.status, reason: 'not_pending_payment' };
+  }
+
+  const externalReference = `court:${reservationId}`;
+  const mpPayments = await searchMercadoPagoPaymentsByReference(externalReference);
+  const approved = mpPayments.find((p) => p.status === 'approved');
+  if (approved) {
+    await confirmCourtReservationPayment(reservationId, String(approved.id));
+    return { synced: true, reservationId, status: 'approved' };
+  }
+
+  const rejected = mpPayments.find((p) => ['rejected', 'cancelled'].includes(p.status));
+  if (rejected) {
+    await rejectCourtReservationPayment(reservationId, String(rejected.id));
+    return { synced: true, reservationId, status: 'rejected' };
+  }
+
+  const payment = await getLatestPaymentForCourtReservation(reservationId);
+  if (payment && useMockPayments() && payment.status === 'pending') {
+    await approveMockPayment(payment.id);
+    return { synced: true, reservationId, status: 'approved' };
+  }
+
+  return { synced: false, reservationId, status: 'pending', reason: 'payment_not_found' };
+}
+
+async function getLatestPaymentForCourtReservation(reservationId) {
+  const { rows } = await query(
+    `SELECT * FROM payments WHERE court_reservation_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [reservationId],
+  );
+  return rows[0] || null;
+}
+
+async function refundPaymentForCourtReservation(reservationId) {
+  const payment = await getLatestPaymentForCourtReservation(reservationId);
+  if (!payment || payment.status !== 'approved') return;
+
+  if (payment.provider_payment_id && isMercadoPagoConfigured()) {
+    await refundMercadoPagoPayment(payment.provider_payment_id);
+  }
+
+  await query(
+    `UPDATE payments SET status = 'refunded', updated_at = now() WHERE id = $1`,
+    [payment.id],
+  );
+  await query(
+    `UPDATE court_reservations SET status = 'refunded', cancelled_at = now(), updated_at = now()
+     WHERE id = $1`,
+    [reservationId],
+  );
+}
+
 async function confirmBookingPayment(bookingId, providerPaymentId = null) {
   const client = await pool.connect();
   try {
@@ -354,6 +543,10 @@ async function confirmBookingPayment(bookingId, providerPaymentId = null) {
     notificationsService
       .notifyBookingConfirmed(bookingId, { skipAthlete: true })
       .catch((err) => console.warn('[payments] instructor booking push failed:', err.message));
+    const creditsService = require('./credits.service');
+    creditsService
+      .earnCreditForPaidBooking(bookingId)
+      .catch((err) => console.warn('[payments] loyalty earn failed:', err.message));
     return { ...booking, status: 'confirmed' };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -425,6 +618,7 @@ async function getLatestPaymentForPass(passId) {
 
 async function resolveReturnBookingId(payment) {
   if (payment.booking_id) return payment.booking_id;
+  if (payment.court_reservation_id) return payment.court_reservation_id;
   if (!payment.athlete_pass_id) return null;
 
   const { rows } = await query(
@@ -444,6 +638,8 @@ async function approveMockPayment(paymentId) {
   }
   if (payment.athlete_pass_id) {
     await confirmPassPayment(payment.athlete_pass_id, `mock_${paymentId}`);
+  } else if (payment.court_reservation_id) {
+    await confirmCourtReservationPayment(payment.court_reservation_id, `mock_${paymentId}`);
   } else {
     await confirmBookingPayment(payment.booking_id, `mock_${paymentId}`);
   }
@@ -499,6 +695,19 @@ async function processMercadoPagoPaymentId(providerPaymentId) {
       },
     );
     if (result.processed) return result;
+  }
+
+  if (ref.startsWith('court:')) {
+    const reservationId = ref.slice('court:'.length);
+    if (status === 'approved') {
+      await confirmCourtReservationPayment(reservationId, String(mpPayment.id));
+      return { processed: true, reservationId, status: 'approved' };
+    }
+    if (['rejected', 'cancelled'].includes(status)) {
+      await rejectCourtReservationPayment(reservationId, String(mpPayment.id));
+      return { processed: true, reservationId, status: 'rejected' };
+    }
+    return { processed: true, reservationId, status: 'pending' };
   }
 
   if (!externalReference) {
@@ -650,7 +859,11 @@ module.exports = {
   expireStalePendingBookings,
   createPaymentForBooking,
   createPaymentForPass,
+  createPaymentForCourtReservation,
   confirmPassPayment,
+  confirmCourtReservationPayment,
+  rejectCourtReservationPayment,
+  syncCourtReservationPayment,
   confirmBookingPayment,
   rejectBookingPayment,
   getPaymentForUser,
@@ -660,8 +873,11 @@ module.exports = {
   processMercadoPagoPaymentId,
   processMercadoPagoPreapprovalId,
   syncBookingPaymentFromMercadoPago,
+  syncCourtReservationPayment,
   refundPaymentForBooking,
+  refundPaymentForCourtReservation,
   getLatestPaymentForBooking,
+  getLatestPaymentForCourtReservation,
   getLatestPaymentForPass,
   resolveReturnBookingId,
   buildPaymentResponse,

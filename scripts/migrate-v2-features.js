@@ -178,6 +178,16 @@ async function run() {
         ON court_reservations(athlete_user_id, start_at DESC);
     `);
 
+    await client.query(`
+      ALTER TABLE payments
+        ADD COLUMN IF NOT EXISTS court_reservation_id UUID REFERENCES court_reservations(id) ON DELETE SET NULL;
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_payments_court_reservation
+        ON payments(court_reservation_id)
+        WHERE court_reservation_id IS NOT NULL;
+    `);
+
     await client.query('COMMIT');
     console.log('V2 features migration completed.');
   } catch (err) {

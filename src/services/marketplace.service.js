@@ -86,6 +86,36 @@ function assertSellerConnected(payee) {
   }
 }
 
+async function resolveInstitutionCheckoutSplit(institutionRow, grossCents) {
+  if (!isMarketplaceEnabled()) {
+    return { splitMode: 'single_collector' };
+  }
+
+  if (!isSellerConnected(institutionRow)) {
+    throw conflict(
+      'SELLER_NOT_CONNECTED',
+      'The club has not connected Mercado Pago to receive court payments yet.',
+    );
+  }
+
+  const { platformFeeCents, sellerNetCents } = computeSplitAmounts(
+    grossCents,
+    institutionRow.plan,
+    'institution',
+    institutionRow,
+  );
+
+  return {
+    splitMode: 'marketplace',
+    sellerType: 'institution',
+    sellerCollectorId: institutionRow.mp_collector_id,
+    platformFeeCents,
+    sellerNetCents,
+    marketplaceFee: platformFeeCents / 100,
+    collectorId: institutionRow.mp_collector_id,
+  };
+}
+
 async function resolveCheckoutSplit(classRow, grossCents, { isPassPurchase = false } = {}) {
   if (!isMarketplaceEnabled()) {
     return { splitMode: 'single_collector' };
@@ -205,6 +235,7 @@ module.exports = {
   computeSplitAmounts,
   resolvePayeeForClass,
   resolveCheckoutSplit,
+  resolveInstitutionCheckoutSplit,
   assertClassSellerCanReceivePayment,
   recordPassBookingLedger,
   getSellerConnectionForUser,

@@ -15,6 +15,8 @@
     "db:migrate-verification": "node scripts/migrate-verification.js",
     "db:migrate-recurring": "node scripts/migrate-recurring-classes.js",
     "db:migrate-v2": "node scripts/migrate-v2-features.js",
+    "db:migrate-v3": "node scripts/migrate-v3-features.js",
+    "db:migrate-live-streaming": "node scripts/migrate-live-streaming.js",
     "db:migrate-user-purge": "node scripts/migrate-user-purge.js",
     "webhook:url": "node -e \"require('dotenv').config({path:require('path').resolve('.env')}); const u=(process.env.API_PUBLIC_URL||'http://localhost:'+(process.env.PORT||3001)).replace(/\\/$/,''); console.log(u+'/v1/webhooks/mercadopago')\""
   },
@@ -27,6 +29,7 @@
     "google-auth-library": "^10.7.0",
     "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.2",
+    "livekit-server-sdk": "^2.17.0",
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.10",

@@ -31,6 +31,13 @@ const PREF_BY_TYPE = {
   series_deleted: 'classReminders',
   waitlist_spot: 'bookingConfirmed',
   court_reservation_confirmed: 'bookingConfirmed',
+  credits_expiring: 'creditsExpiring',
+  recurring_shift_created: 'bookingConfirmed',
+  recurring_shift_reservation: 'bookingConfirmed',
+  recurring_shift_skipped: 'bookingConfirmed',
+  open_game_player_joined: 'bookingConfirmed',
+  open_game_cancelled: 'bookingConfirmed',
+  live_class_started: 'classReminders',
 };
 
 function buildDedupeKey(userId, type, { bookingId, inviteId, memberId, dueDate, classId } = {}) {
@@ -426,6 +433,113 @@ async function notifyReviewInvite({ bookingId, athleteUserId, classId, classTitl
   });
 }
 
+async function notifyCreditsExpiring({ userId, balance, expiresAt }) {
+  const expiresLabel = expiresAt
+    ? new Date(expiresAt).toLocaleDateString('es-UY', { dateStyle: 'medium' })
+    : '';
+  return dispatchPush({
+    userId,
+    type: 'credits_expiring',
+    title: 'Tus créditos están por vencer',
+    body: `Tenés ${balance} crédito${balance === 1 ? '' : 's'} que vencen el ${expiresLabel}. Reservá una clase para renovarlos.`,
+    data: {
+      tab: tabForNotification('credits_expiring', 'athlete'),
+      screen: '/(athlete)/(tabs)/profile',
+    },
+  });
+}
+
+async function notifyRecurringShiftCreated({ userId, shiftId, courtName, weekdayLabel, startTime }) {
+  return dispatchPush({
+    userId,
+    type: 'recurring_shift_created',
+    title: 'Turno fijo activado',
+    body: `Cada ${weekdayLabel} a las ${startTime} en ${courtName}. Te avisaremos cuando se genere la reserva semanal.`,
+    data: {
+      shiftId,
+      screen: '/(athlete)/courts/recurring-shifts',
+    },
+  });
+}
+
+async function notifyRecurringShiftReservation({
+  userId,
+  shiftId,
+  reservationId,
+  startAt,
+  courtName,
+}) {
+  const when = formatClassWhen(startAt);
+  return dispatchPush({
+    userId,
+    type: 'recurring_shift_reservation',
+    title: 'Reserva semanal lista',
+    body: `${courtName} — ${when}. Completá el pago para confirmar tu turno fijo.`,
+    data: {
+      shiftId,
+      reservationId,
+      screen: '/(athlete)/courts/reservations',
+    },
+  });
+}
+
+async function notifyRecurringShiftSkipped({ userId, shiftId, reason }) {
+  return dispatchPush({
+    userId,
+    type: 'recurring_shift_skipped',
+    title: 'Turno fijo no disponible',
+    body:
+      reason === 'slot_unavailable'
+        ? 'No pudimos reservar tu turno fijo esta semana porque el horario ya está ocupado.'
+        : 'No pudimos generar tu reserva semanal. Revisá tus turnos fijos.',
+    data: {
+      shiftId,
+      screen: '/(athlete)/courts/recurring-shifts',
+    },
+  });
+}
+
+async function notifyOpenGamePlayerJoined({ creatorUserId, gameId, playerName, gameTitle }) {
+  return dispatchPush({
+    userId: creatorUserId,
+    type: 'open_game_player_joined',
+    title: 'Nuevo jugador en tu partido',
+    body: `${playerName} se sumó a «${gameTitle}».`,
+    data: {
+      gameId,
+      screen: `/open-games/${gameId}`,
+    },
+  });
+}
+
+async function notifyOpenGameCancelled({ userId, gameId, gameTitle }) {
+  return dispatchPush({
+    userId,
+    type: 'open_game_cancelled',
+    title: 'Partido cancelado',
+    body: `«${gameTitle}» fue cancelado por el organizador.`,
+    data: {
+      gameId,
+      screen: '/open-games',
+    },
+  });
+}
+
+async function notifyLiveClassStarted({ userId, classId, classTitle, streamId }) {
+  return dispatchPush({
+    userId,
+    type: 'live_class_started',
+    title: 'Tu clase en vivo comenzó',
+    body: `«${classTitle}» ya está en transmisión. Entrá desde la app — no hace falta Zoom ni otra herramienta.`,
+    data: {
+      classId,
+      streamId,
+      screen: `/live/${classId}`,
+      tab: tabForNotification('live_class_started', 'athlete'),
+    },
+  });
+}
+
 async function findUserIdByEmail(email) {
   const { rows } = await query(
     `SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL LIMIT 1`,
@@ -706,6 +820,13 @@ module.exports = {
   notifyClassInstanceUpdated,
   notifySeriesPaused,
   notifySeriesDeleted,
+  notifyCreditsExpiring,
+  notifyRecurringShiftCreated,
+  notifyRecurringShiftReservation,
+  notifyRecurringShiftSkipped,
+  notifyOpenGamePlayerJoined,
+  notifyOpenGameCancelled,
+  notifyLiveClassStarted,
   findUserIdByEmail,
   formatClassWhen,
 };

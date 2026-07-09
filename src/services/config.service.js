@@ -3,7 +3,7 @@ const DISCIPLINES = require('../config/disciplines').DISCIPLINES;
 const { getPlans: getPlansFromConfig } = require('../config/plans');
 const { listTierCatalog } = require('./gym-subscription.service');
 
-const { defaultCurrency } = require('../config/env');
+const { defaultCurrency, livekitConfigured } = require('../config/env');
 const paymentsService = require('./payments.service');
 const { getMarketplacePublicConfig } = require('../config/marketplace.config');
 
@@ -30,8 +30,10 @@ function getAppConfig() {
       analyticsMetrics: true,
       clubMemberships: true,
       courts: true,
-      loyaltyCredits: false,
-      liveStreaming: false,
+      loyaltyCredits: true,
+      fixedCourtShifts: true,
+      openGames: true,
+      liveStreaming: livekitConfigured,
       recordedClasses: false,
       multipleCurrencies: false,
       digitalWallets: false,

@@ -7,14 +7,19 @@ const paymentsService = require('./payments.service');
 const passesService = require('./passes.service');
 const marketplaceService = require('./marketplace.service');
 const notificationsService = require('./notifications.service');
+const creditsService = require('./credits.service');
 
 async function createBooking(user, body) {
   if (user.role !== 'athlete') {
     throw forbidden('Only athletes can create bookings');
   }
 
-  const { classId, paymentModel = 'per_class', periodType } = body;
+  const { classId, paymentModel = 'per_class', periodType, useCredits = false } = body;
   if (!classId) throw badRequest('classId is required');
+
+  if (useCredits && paymentModel !== 'per_class') {
+    throw badRequest('Loyalty credits apply only to per-class bookings');
+  }
 
   if (paymentModel === 'per_period' && !periodType) {
     throw badRequest('periodType is required for per_period (week, month, quarter)');
@@ -44,7 +49,7 @@ async function createBooking(user, body) {
     );
   }
 
-  if (usePayments) {
+  if (usePayments && !useCredits) {
     await marketplaceService.assertClassSellerCanReceivePayment(classRow, {
       isPassPurchase: isSubscriptionModel && !existingActivePass,
       usingActivePass: Boolean(existingActivePass),
@@ -62,6 +67,31 @@ async function createBooking(user, body) {
     );
     if (existing.rows.length) {
       throw conflict('BOOKING_EXISTS', 'You already have a booking for this class');
+    }
+
+    if (useCredits) {
+      await creditsService.assertEligibleForRedemption(
+        user.id,
+        classRow.price_cents,
+        client,
+      );
+
+      const { rows } = await client.query(
+        `INSERT INTO bookings (
+          class_id, athlete_user_id, status, payment_model, price_cents, price_currency, loyalty_redemption
+        ) VALUES ($1, $2, 'confirmed', 'per_class', $3, $4, TRUE)
+         RETURNING *`,
+        [classId, user.id, classRow.price_cents, classRow.price_currency],
+      );
+      const bookingRow = rows[0];
+      await creditsService.redeemCredits(client, user.id, bookingRow.id);
+      await client.query('COMMIT');
+
+      notificationsService
+        .notifyBookingConfirmed(bookingRow.id)
+        .catch((err) => console.warn('[bookings] loyalty booking push failed:', err.message));
+
+      return { booking: serializeBooking(bookingRow), loyaltyRedemption: true };
     }
 
     let initialStatus = 'confirmed';
@@ -154,6 +184,16 @@ async function createBooking(user, body) {
       notificationsService
         .notifyBookingConfirmed(bookingRow.id)
         .catch((err) => console.warn('[bookings] booking confirmed push failed:', err.message));
+
+      if (
+        bookingRow.payment_model === 'per_class' &&
+        !bookingRow.loyalty_redemption &&
+        !usePayments
+      ) {
+        creditsService
+          .earnCreditForPaidBooking(bookingRow.id)
+          .catch((err) => console.warn('[bookings] loyalty earn failed:', err.message));
+      }
     }
 
     return result;

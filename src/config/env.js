@@ -57,4 +57,12 @@ module.exports = {
       process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
   ),
   notificationsSchedulerEnabled: process.env.NOTIFICATIONS_SCHEDULER_ENABLED !== 'false',
+  livekitUrl: (process.env.LIVEKIT_URL || '').replace(/\/$/, ''),
+  livekitApiKey: process.env.LIVEKIT_API_KEY || '',
+  livekitApiSecret: process.env.LIVEKIT_API_SECRET || '',
+  livekitConfigured: Boolean(
+    process.env.LIVEKIT_URL &&
+      process.env.LIVEKIT_API_KEY &&
+      process.env.LIVEKIT_API_SECRET,
+  ),
 };

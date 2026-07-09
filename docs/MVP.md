@@ -22,14 +22,14 @@ Feature flags: [`constants/features.ts`](../constants/features.ts).
 | Advanced search (level, language, gender) | `advancedSearch` | v2 | **Implemented** |
 | Map / geolocation | `geolocationMap` | v2 | Implemented |
 | Recurring classes | `recurringClasses` | v2 | Implemented |
-| Live streaming | `liveStreaming` | v2 | Deferred |
+| Live streaming | `liveStreaming` | v2 | **Implemented** (LiveKit) |
 | Recorded VOD | `recordedClasses` | v3 | Deferred |
 | Waitlist | `waitlist` | v2 | **Implemented** |
 | Multi-currency | `multipleCurrencies` | v2 | Deferred |
 | Apple / Google Pay | `digitalWallets` | v2 | Deferred |
 | Monthly / period subscriptions | `subscriptionPaymentModels` | v2 | Implemented |
 | Mercado Pago checkout | `integratedPayments` | v2 | Implemented |
-| Loyalty credits | `loyaltyCredits` | v2 | Deferred |
+| Loyalty credits | `loyaltyCredits` | v2 | **Implemented** |
 | Instructor review replies | `reviewResponses` | v2 | **Implemented** |
 | In-app notification inbox | `inAppNotificationCenter` | v2 | **Implemented** |
 | Gym analytics tab | `analyticsMetrics` | v2 | **Implemented** |

@@ -48,6 +48,8 @@ router.use('/passes', passesRoutes);
 router.use('/memberships', membershipsRoutes);
 router.use('/waitlist', waitlistRoutes);
 router.use('/courts', courtsRoutes);
+router.use('/credits', require('./credits.routes'));
+router.use('/open-games', require('./open-games.routes'));
 router.use('/webhooks', webhooksRoutes);
 router.use('/verification-requests', verificationRoutes);
 router.use('/admin', adminRoutes);

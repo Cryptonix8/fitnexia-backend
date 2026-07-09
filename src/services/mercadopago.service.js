@@ -105,6 +105,19 @@ function buildMembershipCheckoutBackUrl(memberId, status = 'success') {
   return `${base}/v1/memberships/checkout-return?${params.toString()}`;
 }
 
+function buildCourtDeepLink(reservationId, status) {
+  return `${appDeepLinkScheme}://court/complete?reservationId=${reservationId}&status=${status}`;
+}
+
+function buildCourtCheckoutBackUrl(reservationId, status = 'success') {
+  const base = requireHttpsApiPublicUrl('court checkout');
+  const params = new URLSearchParams({
+    reservationId: String(reservationId),
+    status,
+  });
+  return `${base}/v1/payments/court-return?${params.toString()}`;
+}
+
 /** Checkout Pro class/pass booking — HTTPS return URL that redirects to the app. */
 function buildBookingCheckoutBackUrl(bookingId, status = 'success') {
   const base = requireHttpsApiPublicUrl('booking checkout');
@@ -179,6 +192,7 @@ async function createCheckoutPreference({
   amountCents,
   currency,
   returnBookingId,
+  returnCourtReservationId,
   membershipMemberId,
   collectorId,
   marketplaceFee,
@@ -193,11 +207,17 @@ async function createCheckoutPreference({
         failure: buildMembershipCheckoutBackUrl(membershipMemberId, 'failure'),
         pending: buildMembershipCheckoutBackUrl(membershipMemberId, 'pending'),
       }
-    : {
-        success: buildBookingCheckoutBackUrl(deepLinkBookingId, 'success'),
-        failure: buildBookingCheckoutBackUrl(deepLinkBookingId, 'failure'),
-        pending: buildBookingCheckoutBackUrl(deepLinkBookingId, 'pending'),
-      };
+    : returnCourtReservationId
+      ? {
+          success: buildCourtCheckoutBackUrl(returnCourtReservationId, 'success'),
+          failure: buildCourtCheckoutBackUrl(returnCourtReservationId, 'failure'),
+          pending: buildCourtCheckoutBackUrl(returnCourtReservationId, 'pending'),
+        }
+      : {
+          success: buildBookingCheckoutBackUrl(deepLinkBookingId, 'success'),
+          failure: buildBookingCheckoutBackUrl(deepLinkBookingId, 'failure'),
+          pending: buildBookingCheckoutBackUrl(deepLinkBookingId, 'pending'),
+        };
 
   const body = {
     items: [
@@ -268,6 +288,8 @@ module.exports = {
   buildMockCheckoutUrl,
   buildMockMembershipAuthorizeUrl,
   buildDeepLink,
+  buildCourtDeepLink,
+  buildCourtCheckoutBackUrl,
   buildMembershipDeepLink,
   buildMembershipAuthorizeBackUrl,
   buildMembershipCheckoutBackUrl,
