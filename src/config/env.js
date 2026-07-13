@@ -38,6 +38,7 @@ module.exports = {
   apiPublicUrl: (process.env.API_PUBLIC_URL || `http://localhost:${port}`).replace(/\/$/, ''),
   appDeepLinkScheme: process.env.APP_DEEP_LINK_SCHEME || 'fitnexia',
   androidAppPackage: process.env.ANDROID_APP_PACKAGE || 'com.fitnexia.app',
+  appleClientId: (process.env.APPLE_CLIENT_ID || 'com.fitnexia.app').trim(),
   paymentPendingMinutes: Number(process.env.PAYMENT_PENDING_MINUTES || 30),
   paymentsEnabled: process.env.PAYMENTS_ENABLED !== 'false',
   defaultCurrency: (process.env.DEFAULT_CURRENCY || 'UYU').trim().toUpperCase(),

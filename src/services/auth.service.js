@@ -10,6 +10,7 @@ const {
 const { AppError, badRequest, conflict, unauthorized, notFound, forbidden } = require('../utils/errors');
 const { validateRegister, validateLogin, validateResetPassword, validatePasswordField } = require('../utils/validation');
 const { verifyGoogleIdToken, parseGoogleProfile } = require('../utils/google');
+const { verifyAppleIdToken, parseAppleProfile } = require('../utils/apple');
 const { jwtAccessExpiresIn, appDeepLinkScheme, passwordResetExpiresMinutes, isDev, apiPublicUrl } = require('../config/env');
 const { sendPasswordResetEmail } = require('./email.service');
 const notificationsService = require('./notifications.service');
@@ -270,6 +271,80 @@ async function googleOAuth(body) {
       firstName: googleProfile.firstName,
       lastName: googleProfile.lastName,
       photoUrl: googleProfile.photoUrl,
+      institutionName: resolvedInstitutionName,
+    });
+
+    const tokens = await createTokens(client, user);
+    await client.query('COMMIT');
+    return { ...tokens, isNewUser: true };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23503') {
+      throw conflict(
+        'EMAIL_RECLAIM_FAILED',
+        'This email was used before and could not be freed for registration. Contact support.',
+      );
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function appleOAuth(body) {
+  const { identityToken, role, institutionName, firstName, lastName, email } = body ?? {};
+  if (!identityToken || typeof identityToken !== 'string') {
+    throw badRequest('identityToken is required');
+  }
+
+  const payload = await verifyAppleIdToken(identityToken);
+  const appleProfile = parseAppleProfile(payload, { firstName, lastName, email });
+
+  const { rows } = await query(
+    `SELECT id, email, role FROM users WHERE email = $1 AND deleted_at IS NULL`,
+    [appleProfile.email],
+  );
+
+  const client = await require('../db/pool').pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    if (rows.length) {
+      const tokens = await createTokens(client, rows[0]);
+      await client.query('COMMIT');
+      return { ...tokens, isNewUser: false };
+    }
+
+    if (!role || !VALID_OAUTH_ROLES.includes(role)) {
+      throw new AppError(
+        400,
+        'NEEDS_ROLE',
+        'Choose athlete, instructor, or gym profile type before signing up with Apple',
+      );
+    }
+
+    await reclaimEmailIfSoftDeleted(client, appleProfile.email);
+
+    const resolvedInstitutionName =
+      role === 'institution'
+        ? institutionName?.trim() || `${appleProfile.firstName}'s Gym`
+        : undefined;
+
+    const userResult = await client.query(
+      `INSERT INTO users (email, password_hash, role, email_verified)
+       VALUES ($1, NULL, $2, TRUE)
+       RETURNING id, email, role`,
+      [appleProfile.email, role],
+    );
+    const user = userResult.rows[0];
+
+    await client.query(`INSERT INTO notification_preferences (user_id) VALUES ($1)`, [user.id]);
+
+    await insertRoleProfile(client, user.id, role, {
+      firstName: appleProfile.firstName,
+      lastName: appleProfile.lastName,
+      photoUrl: appleProfile.photoUrl,
       institutionName: resolvedInstitutionName,
     });
 
@@ -592,6 +667,7 @@ module.exports = {
   register,
   login,
   googleOAuth,
+  appleOAuth,
   refresh,
   logout,
   getMe,

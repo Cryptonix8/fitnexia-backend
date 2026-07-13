@@ -20,6 +20,7 @@ function getAppConfig() {
     minAppVersion: { ios: '1.0.0', android: '1.0.0' },
     features: {
       googleSignIn: true,
+      appleSignIn: true,
       geolocationMap: true,
       integratedPayments: paymentsService.isPaymentsActive(),
       subscriptionPaymentModels: true,

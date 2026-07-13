@@ -21,6 +21,7 @@
     "webhook:url": "node -e \"require('dotenv').config({path:require('path').resolve('.env')}); const u=(process.env.API_PUBLIC_URL||'http://localhost:'+(process.env.PORT||3001)).replace(/\\/$/,''); console.log(u+'/v1/webhooks/mercadopago')\""
   },
   "dependencies": {
+    "apple-signin-auth": "^2.0.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

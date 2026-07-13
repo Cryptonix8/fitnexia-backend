@@ -38,6 +38,15 @@ router.post(
 );
 
 router.post(
+  '/oauth/apple',
+  asyncHandler(async (req, res) => {
+    const result = await authService.appleOAuth(req.body);
+    const { isNewUser, ...tokens } = result;
+    res.status(isNewUser ? 201 : 200).json(tokens);
+  }),
+);
+
+router.post(
   '/refresh',
   asyncHandler(async (req, res) => {
     const result = await authService.refresh(req.body.refreshToken);
