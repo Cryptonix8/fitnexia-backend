@@ -81,6 +81,13 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
+  CREATE TYPE saas_billing_status AS ENUM (
+    'not_required', 'inactive', 'pending', 'active', 'past_due', 'cancelled'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
   CREATE TYPE job_posting_status AS ENUM ('draft', 'open', 'closed');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
@@ -156,6 +163,12 @@ CREATE TABLE IF NOT EXISTS instructors (
   plan                  instructor_plan NOT NULL DEFAULT 'basic',
   average_rating        NUMERIC(3,2) NOT NULL DEFAULT 0,
   review_count          INTEGER NOT NULL DEFAULT 0,
+  saas_billing_status   saas_billing_status NOT NULL DEFAULT 'not_required',
+  saas_mp_preapproval_id TEXT,
+  saas_authorization_url TEXT,
+  saas_last_billed_at   TIMESTAMPTZ,
+  saas_next_billing_at  TIMESTAMPTZ,
+  saas_pending_plan     instructor_plan,
   mp_collector_id       TEXT,
   mp_user_id            TEXT,
   mp_access_token       TEXT,
@@ -194,6 +207,12 @@ CREATE TABLE IF NOT EXISTS institutions (
   verification_status profile_verification_status NOT NULL DEFAULT 'unverified',
   plan        instructor_plan NOT NULL DEFAULT 'institutional',
   saas_tier   gym_saas_tier NOT NULL DEFAULT 'basic',
+  saas_billing_status   saas_billing_status NOT NULL DEFAULT 'not_required',
+  saas_mp_preapproval_id TEXT,
+  saas_authorization_url TEXT,
+  saas_last_billed_at   TIMESTAMPTZ,
+  saas_next_billing_at  TIMESTAMPTZ,
+  saas_pending_tier     gym_saas_tier,
   contact_phone TEXT,
   contact_email TEXT,
   website     TEXT,

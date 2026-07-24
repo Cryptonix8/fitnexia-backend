@@ -6,8 +6,10 @@ const {
   getMemberLimitForTier,
   getEntitlements,
   isValidGymTier,
+  getGymCommissionPercent,
 } = require('../config/gym-tiers');
 const institutionsService = require('./institutions.service');
+const platformBillingService = require('./platform-billing.service');
 
 async function countBillableMembers(institutionId) {
   const { rows } = await query(
@@ -24,16 +26,22 @@ async function countBillableMembers(institutionId) {
 function serializeSubscription(institution, memberCount) {
   const tier = getGymTier(institution.saas_tier || 'basic');
   const limit = tier.memberLimit;
+  const billing = platformBillingService.serializeBillingFields(institution, 'gym');
   return {
     tier: tier.id,
     tierName: tier.name,
     monthlyFeeCents: tier.monthlyFeeCents,
+    commissionPercent: getGymCommissionPercent(tier.id),
     memberCount,
     memberLimit: limit,
     membersRemaining: limit != null ? Math.max(0, limit - memberCount) : null,
     atLimit: limit != null && memberCount >= limit,
     entitlements: getEntitlements(tier.id),
-    billingStatus: 'manual',
+    billingStatus: billing.billingStatus,
+    authorizationUrl: billing.authorizationUrl,
+    pendingTier: institution.saas_pending_tier || undefined,
+    lastBilledAt: billing.lastBilledAt,
+    nextBillingAt: billing.nextBillingAt,
   };
 }
 
@@ -83,8 +91,26 @@ async function updateTierForUser(userId, tierId) {
     }
   }
 
+  const next = getGymTier(nextTier);
+  if (next.monthlyFeeCents > 0) {
+    const billing = await platformBillingService.startGymTierBilling(userId, nextTier);
+    const subscription = await getSubscriptionForInstitution(institution.id);
+    return {
+      ...subscription,
+      checkoutUrl: billing.checkoutUrl || billing.authorizationUrl,
+      pendingTier: billing.pendingTier,
+    };
+  }
+
   await query(
-    `UPDATE institutions SET saas_tier = $2::gym_saas_tier, updated_at = now() WHERE id = $1`,
+    `UPDATE institutions
+     SET saas_tier = $2::gym_saas_tier,
+         saas_billing_status = 'not_required',
+         saas_pending_tier = NULL,
+         saas_mp_preapproval_id = NULL,
+         saas_authorization_url = NULL,
+         updated_at = now()
+     WHERE id = $1`,
     [institution.id, nextTier],
   );
 
@@ -106,9 +132,15 @@ async function updateTierByInstitutionId(institutionId, tierId) {
     }
   }
 
+  const next = getGymTier(nextTier);
   const { rowCount } = await query(
-    `UPDATE institutions SET saas_tier = $2::gym_saas_tier, updated_at = now() WHERE id = $1`,
-    [institutionId, nextTier],
+    `UPDATE institutions
+     SET saas_tier = $2::gym_saas_tier,
+         saas_billing_status = $3::saas_billing_status,
+         saas_pending_tier = NULL,
+         updated_at = now()
+     WHERE id = $1`,
+    [institutionId, nextTier, next.monthlyFeeCents > 0 ? 'inactive' : 'not_required'],
   );
   if (!rowCount) throw notFound('Institution not found');
   return getSubscriptionForInstitution(institutionId);
@@ -119,6 +151,7 @@ function listTierCatalog() {
     id: tier.id,
     name: tier.name,
     monthlyFeeCents: tier.monthlyFeeCents,
+    commissionPercent: tier.commissionPercent,
     memberLimit: tier.memberLimit,
     entitlements: tier.entitlements,
   }));

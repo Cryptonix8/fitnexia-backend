@@ -992,6 +992,29 @@ async function startAuthorization(user, memberId) {
   let preapprovalId = null;
 
   if (isMercadoPagoConfigured()) {
+    const marketplaceService = require('./marketplace.service');
+    const mpOAuthService = require('./mp-oauth.service');
+    const { isMarketplaceEnabled } = require('../config/marketplace.config');
+    let sellerAccessToken;
+
+    if (isMarketplaceEnabled()) {
+      const { rows: instRows } = await query(`SELECT * FROM institutions WHERE id = $1`, [
+        member.institution_id,
+      ]);
+      if (instRows.length && marketplaceService.isSellerConnected(instRows[0])) {
+        const refreshed = await mpOAuthService.refreshSellerTokenIfNeeded(
+          instRows[0],
+          'institutions',
+        );
+        sellerAccessToken = refreshed.mp_access_token;
+      } else if (require('../config/marketplace.config').requireSellerConnect()) {
+        throw conflict(
+          'SELLER_NOT_CONNECTED',
+          'The club has not connected Mercado Pago to receive membership payments yet.',
+        );
+      }
+    }
+
     const preapproval = await createPreapproval({
       externalReference: `msub:${member.subscription_id}`,
       reason: `${member.institution_name} — ${plan.name}`,
@@ -1000,6 +1023,7 @@ async function startAuthorization(user, memberId) {
       payerEmail: user.email,
       billingFrequency: plan.billing_frequency,
       returnMemberId: member.id,
+      accessToken: sellerAccessToken,
     });
     preapprovalId = preapproval.preapprovalId;
     authorizationUrl = preapproval.authorizationUrl;
@@ -1228,12 +1252,36 @@ async function payDebt(userId, memberId) {
   const payRef = `msub_pay:${payment.id}`;
 
   if (isMercadoPagoConfigured()) {
+    const marketplaceService = require('./marketplace.service');
+    let collectorId;
+    let marketplaceFee;
+
+    const { rows: instRows } = await query(`SELECT * FROM institutions WHERE id = $1`, [
+      member.institution_id,
+    ]);
+    if (instRows.length) {
+      try {
+        const split = await marketplaceService.resolveInstitutionCheckoutSplit(
+          instRows[0],
+          amountCents,
+        );
+        if (split.splitMode === 'marketplace') {
+          collectorId = split.collectorId;
+          marketplaceFee = split.marketplaceFee;
+        }
+      } catch (err) {
+        if (err.code === 'SELLER_NOT_CONNECTED' || err.status === 409) throw err;
+      }
+    }
+
     const preference = await createCheckoutPreference({
       externalReference: payRef,
       title: `${member.institution_name} — cuota pendiente`,
       amountCents,
       currency: member.price_currency,
       membershipMemberId: memberId,
+      collectorId,
+      marketplaceFee,
     });
     preferenceId = preference.preferenceId;
     checkoutUrl = preference.checkoutUrl;

@@ -657,6 +657,17 @@ async function processMercadoPagoPaymentId(providerPaymentId) {
     : undefined;
   const currency = mpPayment.currency_id;
   const membershipsService = require('./memberships.service');
+  const platformBillingService = require('./platform-billing.service');
+
+  if (
+    ref.startsWith(platformBillingService.SAAS_REF_GYM) ||
+    ref.startsWith(platformBillingService.SAAS_REF_INSTRUCTOR)
+  ) {
+    if (status === 'approved') {
+      return platformBillingService.processPlatformPaymentReference(ref, String(mpPayment.id));
+    }
+    return { processed: true, status, reason: 'platform_saas_pending_or_rejected' };
+  }
 
   if (ref.startsWith('msub_pay:')) {
     const membershipPaymentId = ref.slice('msub_pay:'.length);
@@ -742,11 +753,21 @@ async function processMercadoPagoPaymentId(providerPaymentId) {
 async function processMercadoPagoPreapprovalId(preapprovalId) {
   const preapproval = await fetchMercadoPagoPreapproval(String(preapprovalId));
   const externalReference = preapproval.external_reference;
-  if (!externalReference || !String(externalReference).startsWith('msub:')) {
+  const ref = externalReference ? String(externalReference) : '';
+  const platformBillingService = require('./platform-billing.service');
+
+  if (
+    ref.startsWith(platformBillingService.SAAS_REF_GYM) ||
+    ref.startsWith(platformBillingService.SAAS_REF_INSTRUCTOR)
+  ) {
+    return platformBillingService.processPlatformPreapproval(preapproval);
+  }
+
+  if (!externalReference || !ref.startsWith('msub:')) {
     return { processed: false, reason: 'not_membership_preapproval' };
   }
 
-  const subscriptionId = String(externalReference).slice('msub:'.length);
+  const subscriptionId = ref.slice('msub:'.length);
   const membershipsService = require('./memberships.service');
   const status = preapproval.status;
 

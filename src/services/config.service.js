@@ -31,6 +31,7 @@ function getAppConfig() {
       analyticsMetrics: true,
       clubMemberships: true,
       courts: true,
+      marketplacePayouts: getMarketplacePublicConfig().enabled,
       loyaltyCredits: true,
       fixedCourtShifts: true,
       openGames: true,

@@ -45,12 +45,14 @@ function resolvePreapprovalInitPoint(initPoint, sandboxInitPoint) {
 }
 
 async function mercadoPagoRequest(path, options = {}) {
+  const token = options.accessToken || mercadopagoAccessToken;
+  const { accessToken: _ignored, ...fetchOptions } = options;
   const res = await fetch(`https://api.mercadopago.com${path}`, {
-    ...options,
+    ...fetchOptions,
     headers: {
-      Authorization: `Bearer ${mercadopagoAccessToken}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      ...(options.headers || {}),
+      ...(fetchOptions.headers || {}),
     },
   });
 
@@ -128,6 +130,21 @@ function buildBookingCheckoutBackUrl(bookingId, status = 'success') {
   return `${base}/v1/payments/booking-return?${params.toString()}`;
 }
 
+/** Platform SaaS (gym tier / instructor plan) — HTTPS return → app deep link. */
+function buildPlatformBillingBackUrl(kind, ownerId, status = 'success') {
+  const base = requireHttpsApiPublicUrl('platform billing');
+  const params = new URLSearchParams({
+    kind: String(kind),
+    ownerId: String(ownerId),
+    status,
+  });
+  return `${base}/v1/platform-billing/return?${params.toString()}`;
+}
+
+function buildPlatformBillingDeepLink(kind, ownerId, status) {
+  return `${appDeepLinkScheme}://profile/billing-complete?kind=${kind}&ownerId=${ownerId}&status=${status}`;
+}
+
 function frequencyToMercadoPago(frequency) {
   if (frequency === 'monthly') return { frequency: 1, frequency_type: 'months' };
   if (frequency === 'quarterly') return { frequency: 3, frequency_type: 'months' };
@@ -145,6 +162,7 @@ async function createPreapproval({
   billingFrequency,
   returnMemberId,
   backUrl,
+  accessToken,
 }) {
   const unitPrice = amountCents / 100;
   const notificationUrl = `${apiPublicUrl}/v1/webhooks/mercadopago`;
@@ -167,6 +185,7 @@ async function createPreapproval({
   const preapproval = await mercadoPagoRequest('/preapproval', {
     method: 'POST',
     body: JSON.stringify(body),
+    accessToken,
   });
 
   return {
@@ -194,6 +213,8 @@ async function createCheckoutPreference({
   returnBookingId,
   returnCourtReservationId,
   membershipMemberId,
+  platformBillingKind,
+  platformBillingOwnerId,
   collectorId,
   marketplaceFee,
 }) {
@@ -207,6 +228,12 @@ async function createCheckoutPreference({
         failure: buildMembershipCheckoutBackUrl(membershipMemberId, 'failure'),
         pending: buildMembershipCheckoutBackUrl(membershipMemberId, 'pending'),
       }
+    : platformBillingKind && platformBillingOwnerId
+      ? {
+          success: buildPlatformBillingBackUrl(platformBillingKind, platformBillingOwnerId, 'success'),
+          failure: buildPlatformBillingBackUrl(platformBillingKind, platformBillingOwnerId, 'failure'),
+          pending: buildPlatformBillingBackUrl(platformBillingKind, platformBillingOwnerId, 'pending'),
+        }
     : returnCourtReservationId
       ? {
           success: buildCourtCheckoutBackUrl(returnCourtReservationId, 'success'),
@@ -235,9 +262,12 @@ async function createCheckoutPreference({
     auto_return: 'approved',
   };
 
-  if (collectorId && marketplaceFee != null && marketplaceFee > 0) {
+  // Always attach collector when marketplace split is requested (fee may be 0).
+  if (collectorId) {
     body.collector_id = Number(collectorId);
-    body.marketplace_fee = marketplaceFee;
+    if (marketplaceFee != null && marketplaceFee >= 0) {
+      body.marketplace_fee = marketplaceFee;
+    }
   }
 
   const preference = await mercadoPagoRequest('/checkout/preferences', {
@@ -294,6 +324,8 @@ module.exports = {
   buildMembershipAuthorizeBackUrl,
   buildMembershipCheckoutBackUrl,
   buildBookingCheckoutBackUrl,
+  buildPlatformBillingBackUrl,
+  buildPlatformBillingDeepLink,
   resolveMercadoPagoCurrency,
   resolveCheckoutInitPoint,
   resolvePreapprovalInitPoint,

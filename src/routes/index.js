@@ -51,6 +51,7 @@ router.use('/courts', courtsRoutes);
 router.use('/credits', require('./credits.routes'));
 router.use('/open-games', require('./open-games.routes'));
 router.use('/webhooks', webhooksRoutes);
+router.use('/platform-billing', require('./platform-billing.routes'));
 router.use('/verification-requests', verificationRoutes);
 router.use('/admin', adminRoutes);
 router.use('/jobs', jobsRoutes);

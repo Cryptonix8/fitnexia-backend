@@ -17,8 +17,8 @@ function getGymPayeePolicy() {
 }
 
 function getPassRevenuePolicy() {
-  const value = (marketplacePassRevenue || 'platform_ledger').toLowerCase();
-  return VALID_PASS_REVENUE.includes(value) ? value : 'platform_ledger';
+  const value = (marketplacePassRevenue || 'split_at_purchase').toLowerCase();
+  return VALID_PASS_REVENUE.includes(value) ? value : 'split_at_purchase';
 }
 
 function isMarketplaceConfigured() {

@@ -33,6 +33,20 @@ router.patch(
   }),
 );
 
+router.post(
+  '/me/plan',
+  requireAuth,
+  requireRole('instructor'),
+  asyncHandler(async (req, res) => {
+    const platformBillingService = require('../services/platform-billing.service');
+    const result = await platformBillingService.startInstructorPlanBilling(
+      req.user.id,
+      req.body.plan,
+    );
+    res.json(result);
+  }),
+);
+
 router.patch(
   '/me/availability-now',
   requireAuth,

@@ -30,9 +30,10 @@ module.exports = {
     '',
   mercadopagoAppId: process.env.MERCADOPAGO_APP_ID || '',
   mercadopagoClientSecret: process.env.MERCADOPAGO_CLIENT_SECRET || '',
+  mercadopagoWebhookSecret: process.env.MERCADOPAGO_WEBHOOK_SECRET || '',
   mercadopagoMarketplaceEnabled: process.env.MERCADOPAGO_MARKETPLACE_ENABLED === 'true',
   marketplaceGymPayee: process.env.MARKETPLACE_GYM_PAYEE || 'institution',
-  marketplacePassRevenue: process.env.MARKETPLACE_PASS_REVENUE || 'platform_ledger',
+  marketplacePassRevenue: process.env.MARKETPLACE_PASS_REVENUE || 'split_at_purchase',
   marketplaceRequireSellerConnect:
     process.env.MARKETPLACE_REQUIRE_SELLER_CONNECT === 'true',
   apiPublicUrl: (process.env.API_PUBLIC_URL || `http://localhost:${port}`).replace(/\/$/, ''),

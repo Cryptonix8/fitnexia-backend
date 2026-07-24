@@ -1,15 +1,12 @@
 const { query } = require('../db/pool');
 const { forbidden } = require('../utils/errors');
 const { parsePagination, paginatedResponse } = require('../utils/pagination');
-const { getCommissionPercent } = require('../config/plans');
+const { getCommissionPercent, getInstitutionCommissionPercent } = require('../config/plans');
 const { getInstructorByUserId } = require('./instructors.service');
 const { getInstitutionByUserId } = require('./institutions.service');
+const { isMarketplaceEnabled } = require('../config/marketplace.config');
 
 const BOOKING_STATUSES = ['confirmed', 'completed'];
-
-function getCommissionRate(plan) {
-  return getCommissionPercent(plan) / 100;
-}
 
 function periodBounds(period = 'month') {
   const now = new Date();
@@ -38,6 +35,7 @@ async function resolveOwner(user) {
     return {
       role: 'instructor',
       plan: instructor.plan,
+      commissionRate: getCommissionPercent(instructor.plan) / 100,
       whereSql: 'c.instructor_id = $1',
       params: [instructor.id],
     };
@@ -47,7 +45,8 @@ async function resolveOwner(user) {
     const institution = await getInstitutionByUserId(user.id);
     return {
       role: 'institution',
-      plan: institution.plan,
+      plan: institution.saas_tier || institution.plan,
+      commissionRate: getInstitutionCommissionPercent(institution) / 100,
       whereSql: 'c.institution_id = $1',
       params: [institution.id],
     };
@@ -72,7 +71,7 @@ async function listPayouts(user, queryParams = {}) {
   const { start, end } = periodBounds('month');
   const from = queryParams.from ? new Date(queryParams.from) : start;
   const to = queryParams.to ? new Date(`${queryParams.to}T23:59:59.999`) : end;
-  const commissionRate = getCommissionRate(owner.plan);
+  const commissionRate = owner.commissionRate;
 
   const statusIdx = owner.params.length + 1;
   const fromIdx = statusIdx + 1;
@@ -119,7 +118,7 @@ async function listPayouts(user, queryParams = {}) {
 async function getSummary(user, period = 'month') {
   const owner = await resolveOwner(user);
   const { start, end } = periodBounds(period);
-  const commissionRate = getCommissionRate(owner.plan);
+  const commissionRate = owner.commissionRate;
 
   const statusIdx = owner.params.length + 1;
   const fromIdx = statusIdx + 1;
@@ -148,6 +147,7 @@ async function getSummary(user, period = 'month') {
     currency: rows[0].currency,
     commissionRate,
     plan: owner.plan,
+    automaticPayouts: isMarketplaceEnabled(),
   };
 }
 
@@ -156,7 +156,7 @@ async function exportCsv(user, queryParams = {}) {
   const { start, end } = periodBounds('month');
   const from = queryParams.from ? new Date(queryParams.from) : start;
   const to = queryParams.to ? new Date(`${queryParams.to}T23:59:59.999`) : end;
-  const commissionRate = getCommissionRate(owner.plan);
+  const commissionRate = owner.commissionRate;
 
   const statusIdx = owner.params.length + 1;
   const fromIdx = statusIdx + 1;

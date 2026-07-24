@@ -2,7 +2,9 @@ const GYM_TIERS = [
   {
     id: 'basic',
     name: 'Basic',
-    monthlyFeeCents: 4900,
+    // Free entry tier — Fitnexia earns via transaction commission (see commissionPercent).
+    monthlyFeeCents: 0,
+    commissionPercent: 10,
     memberLimit: 100,
     entitlements: {
       manualPayments: true,
@@ -21,6 +23,7 @@ const GYM_TIERS = [
     id: 'professional',
     name: 'Professional',
     monthlyFeeCents: 9900,
+    commissionPercent: 8,
     memberLimit: 500,
     entitlements: {
       manualPayments: true,
@@ -39,6 +42,7 @@ const GYM_TIERS = [
     id: 'premium',
     name: 'Premium',
     monthlyFeeCents: 14900,
+    commissionPercent: 5,
     memberLimit: 1999,
     entitlements: {
       manualPayments: true,
@@ -57,6 +61,7 @@ const GYM_TIERS = [
     id: 'enterprise',
     name: 'Enterprise',
     monthlyFeeCents: 24900,
+    commissionPercent: 3,
     memberLimit: null,
     entitlements: {
       manualPayments: true,
@@ -100,6 +105,11 @@ function isValidGymTier(tierId) {
   return VALID_TIER_IDS.includes(String(tierId || '').toLowerCase());
 }
 
+function getGymCommissionPercent(tierId) {
+  const tier = getGymTier(tierId);
+  return Number.isFinite(tier.commissionPercent) ? tier.commissionPercent : 10;
+}
+
 module.exports = {
   GYM_TIERS,
   VALID_TIER_IDS,
@@ -109,4 +119,5 @@ module.exports = {
   getEntitlements,
   hasEntitlement,
   isValidGymTier,
+  getGymCommissionPercent,
 };

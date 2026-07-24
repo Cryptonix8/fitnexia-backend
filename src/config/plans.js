@@ -1,3 +1,5 @@
+const { getGymCommissionPercent } = require('./gym-tiers');
+
 const PLANS = [
   { id: 'basic', name: 'Básico', monthlyFeeCents: 0, commissionPercent: 10 },
   { id: 'pro', name: 'Pro', monthlyFeeCents: 2900, commissionPercent: 8 },
@@ -23,9 +25,14 @@ function getCommissionPercent(plan) {
   return match?.commissionPercent ?? getBasicCommissionPercent();
 }
 
-/** Gyms on SaaS tiers pay no transaction commission to Fitnexia. */
+/**
+ * Gyms pay Fitnexia monthly SaaS (when tier fee > 0) plus a transaction commission
+ * based on their saas_tier. Legacy institutions without saas_tier fall back to plan %.
+ */
 function getInstitutionCommissionPercent(institutionRow) {
-  if (institutionRow?.saas_tier) return 0;
+  if (institutionRow?.saas_tier) {
+    return getGymCommissionPercent(institutionRow.saas_tier);
+  }
   return getCommissionPercent(institutionRow?.plan || 'institutional');
 }
 
