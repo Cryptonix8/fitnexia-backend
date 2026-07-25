@@ -992,6 +992,10 @@ async function startAuthorization(user, memberId) {
   let preapprovalId = null;
 
   if (isMercadoPagoConfigured()) {
+    // Recurring dues are created with the gym's own MP token so money lands in the
+    // gym wallet directly. MP preapprovals do not support marketplace_fee, so
+    // Fitnexia takes no commission on recurring club dues (one-time debt checkouts
+    // DO carry the marketplace fee via Checkout Pro).
     const marketplaceService = require('./marketplace.service');
     const mpOAuthService = require('./mp-oauth.service');
     const { isMarketplaceEnabled } = require('../config/marketplace.config');

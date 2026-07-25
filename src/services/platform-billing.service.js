@@ -252,28 +252,87 @@ async function activateInstructorBilling(instructorId, { preapprovalId, planId }
   return { activated: true, kind: 'instructor', ownerId: instructorId, plan: nextPlan };
 }
 
+/** Paused preapproval → past_due (keep tier). Cancelled → downgrade to free Basic. */
+async function suspendGymBilling(institutionId, { cancelled = false } = {}) {
+  if (cancelled) {
+    await query(
+      `UPDATE institutions
+       SET saas_tier = 'basic',
+           saas_pending_tier = NULL,
+           saas_billing_status = 'cancelled',
+           saas_mp_preapproval_id = NULL,
+           saas_authorization_url = NULL,
+           updated_at = now()
+       WHERE id = $1`,
+      [institutionId],
+    );
+    return { processed: true, kind: 'gym', ownerId: institutionId, status: 'cancelled' };
+  }
+
+  await query(
+    `UPDATE institutions
+     SET saas_billing_status = 'past_due', updated_at = now()
+     WHERE id = $1`,
+    [institutionId],
+  );
+  return { processed: true, kind: 'gym', ownerId: institutionId, status: 'past_due' };
+}
+
+async function suspendInstructorBilling(instructorId, { cancelled = false } = {}) {
+  if (cancelled) {
+    await query(
+      `UPDATE instructors
+       SET plan = 'basic',
+           saas_pending_plan = NULL,
+           saas_billing_status = 'cancelled',
+           saas_mp_preapproval_id = NULL,
+           saas_authorization_url = NULL,
+           updated_at = now()
+       WHERE id = $1`,
+      [instructorId],
+    );
+    return { processed: true, kind: 'instructor', ownerId: instructorId, status: 'cancelled' };
+  }
+
+  await query(
+    `UPDATE instructors
+     SET saas_billing_status = 'past_due', updated_at = now()
+     WHERE id = $1`,
+    [instructorId],
+  );
+  return { processed: true, kind: 'instructor', ownerId: instructorId, status: 'past_due' };
+}
+
 async function processPlatformPreapproval(preapproval) {
   const externalReference = String(preapproval.external_reference || '');
   const status = String(preapproval.status || '').toLowerCase();
   const preapprovalId = String(preapproval.id || '');
 
-  if (!['authorized', 'active'].includes(status)) {
-    return { processed: false, reason: 'preapproval_not_active', status };
+  const isGym = externalReference.startsWith(SAAS_REF_GYM);
+  const isInstructor = externalReference.startsWith(SAAS_REF_INSTRUCTOR);
+  if (!isGym && !isInstructor) {
+    return { processed: false, reason: 'not_platform_saas' };
   }
 
-  if (externalReference.startsWith(SAAS_REF_GYM)) {
-    const rest = externalReference.slice(SAAS_REF_GYM.length);
-    const [institutionId, tierId] = rest.split(':');
-    return activateGymBilling(institutionId, { preapprovalId, tierId });
+  const rest = isGym
+    ? externalReference.slice(SAAS_REF_GYM.length)
+    : externalReference.slice(SAAS_REF_INSTRUCTOR.length);
+  const [ownerId, planOrTierId] = rest.split(':');
+
+  if (['authorized', 'active'].includes(status)) {
+    return isGym
+      ? activateGymBilling(ownerId, { preapprovalId, tierId: planOrTierId })
+      : activateInstructorBilling(ownerId, { preapprovalId, planId: planOrTierId });
   }
 
-  if (externalReference.startsWith(SAAS_REF_INSTRUCTOR)) {
-    const rest = externalReference.slice(SAAS_REF_INSTRUCTOR.length);
-    const [instructorId, planId] = rest.split(':');
-    return activateInstructorBilling(instructorId, { preapprovalId, planId });
+  if (['cancelled', 'paused'].includes(status)) {
+    const cancelled = status === 'cancelled';
+    return isGym
+      ? suspendGymBilling(ownerId, { cancelled })
+      : suspendInstructorBilling(ownerId, { cancelled });
   }
 
-  return { processed: false, reason: 'not_platform_saas' };
+  return { processed: false, reason: 'preapproval_not_active', status };
 }
 
 async function processPlatformPaymentReference(externalReference, providerPaymentId) {
@@ -339,6 +398,8 @@ module.exports = {
   startInstructorPlanBilling,
   activateGymBilling,
   activateInstructorBilling,
+  suspendGymBilling,
+  suspendInstructorBilling,
   processPlatformPreapproval,
   processPlatformPaymentReference,
   createGymTierCheckout,
