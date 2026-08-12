@@ -43,7 +43,18 @@ function serializeBillingFields(row, kind) {
   };
 }
 
-async function startGymTierBilling(userId, tierId) {
+function assertNotIosClient(clientPlatform) {
+  const platform = String(clientPlatform || '').toLowerCase();
+  if (platform === 'ios') {
+    const { conflict } = require('../utils/errors');
+    throw conflict(
+      'IOS_REQUIRES_IAP',
+      'On iOS, Fitnexia plans must be purchased with In-App Purchase. Use StoreKit instead of Mercado Pago.',
+    );
+  }
+}
+
+async function startGymTierBilling(userId, tierId, { clientPlatform } = {}) {
   if (!isValidGymTier(tierId)) throw badRequest('Invalid gym tier');
   if (!isPaymentsActive()) throw badRequest('Payments are not configured');
 
@@ -71,6 +82,8 @@ async function startGymTierBilling(userId, tierId) {
       checkoutUrl: null,
     };
   }
+
+  assertNotIosClient(clientPlatform);
 
   const externalReference = `${SAAS_REF_GYM}${institution.id}:${tier.id}`;
   let authorizationUrl = null;
@@ -125,7 +138,7 @@ async function startGymTierBilling(userId, tierId) {
   };
 }
 
-async function startInstructorPlanBilling(userId, planId) {
+async function startInstructorPlanBilling(userId, planId, { clientPlatform } = {}) {
   const plans = getPlans();
   const plan = plans.find((p) => p.id === planId);
   if (!plan) throw badRequest('Invalid instructor plan');
@@ -154,6 +167,8 @@ async function startInstructorPlanBilling(userId, planId) {
       checkoutUrl: null,
     };
   }
+
+  assertNotIosClient(clientPlatform);
 
   const externalReference = `${SAAS_REF_INSTRUCTOR}${instructor.id}:${plan.id}`;
   let authorizationUrl = null;

@@ -75,7 +75,7 @@ async function assertCanAddMembers(institutionId, additional = 1) {
   }
 }
 
-async function updateTierForUser(userId, tierId) {
+async function updateTierForUser(userId, tierId, { clientPlatform } = {}) {
   if (!isValidGymTier(tierId)) {
     throw badRequest('Invalid gym tier');
   }
@@ -93,7 +93,9 @@ async function updateTierForUser(userId, tierId) {
 
   const next = getGymTier(nextTier);
   if (next.monthlyFeeCents > 0) {
-    const billing = await platformBillingService.startGymTierBilling(userId, nextTier);
+    const billing = await platformBillingService.startGymTierBilling(userId, nextTier, {
+      clientPlatform,
+    });
     const subscription = await getSubscriptionForInstitution(institution.id);
     return {
       ...subscription,

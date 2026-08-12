@@ -12,6 +12,7 @@
     "db:migrate-passes": "node scripts/migrate-athlete-passes.js",
     "db:migrate-marketplace": "node scripts/migrate-mp-marketplace.js",
     "db:migrate-platform-billing": "node scripts/migrate-platform-billing.js",
+    "db:migrate-apple-iap": "node scripts/migrate-apple-iap.js",
     "db:migrate-disciplines": "node scripts/migrate-disciplines.js",
     "db:migrate-verification": "node scripts/migrate-verification.js",
     "db:migrate-recurring": "node scripts/migrate-recurring-classes.js",

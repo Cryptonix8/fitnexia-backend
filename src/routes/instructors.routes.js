@@ -42,6 +42,7 @@ router.post(
     const result = await platformBillingService.startInstructorPlanBilling(
       req.user.id,
       req.body.plan,
+      { clientPlatform: String(req.headers['x-client-platform'] || '').toLowerCase() },
     );
     res.json(result);
   }),

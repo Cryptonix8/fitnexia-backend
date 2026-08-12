@@ -1,8 +1,14 @@
 const { getGymCommissionPercent } = require('./gym-tiers');
 
+/**
+ * Instructor plans (client model):
+ * - Freemium (basic): free app use, 8% commission on completed class payments
+ * - Pro: $29/mo, 0% commission on class payments
+ * Institutional kept for legacy / gym-linked plan field; not shown on instructor plan UI.
+ */
 const PLANS = [
-  { id: 'basic', name: 'Básico', monthlyFeeCents: 0, commissionPercent: 10 },
-  { id: 'pro', name: 'Pro', monthlyFeeCents: 2900, commissionPercent: 8 },
+  { id: 'basic', name: 'Freemium', monthlyFeeCents: 0, commissionPercent: 8 },
+  { id: 'pro', name: 'Pro', monthlyFeeCents: 2900, commissionPercent: 0 },
   { id: 'institutional', name: 'Institucional', monthlyFeeCents: 9900, commissionPercent: 5 },
 ];
 
@@ -11,7 +17,7 @@ function getBasicCommissionPercent() {
   if (Number.isFinite(fromEnv) && fromEnv >= 0 && fromEnv <= 100) {
     return fromEnv;
   }
-  return 10;
+  return 8;
 }
 
 function getPlans() {

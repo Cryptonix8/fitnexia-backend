@@ -40,6 +40,10 @@ module.exports = {
   appDeepLinkScheme: process.env.APP_DEEP_LINK_SCHEME || 'fitnexia',
   androidAppPackage: process.env.ANDROID_APP_PACKAGE || 'com.fitnexia.app',
   appleClientId: (process.env.APPLE_CLIENT_ID || 'com.fitnexia.app').trim(),
+  appleIapBundleId: (process.env.APPLE_IAP_BUNDLE_ID || process.env.APPLE_CLIENT_ID || 'com.fitunion.mobile').trim(),
+  appleIapAllowUnverified:
+    process.env.APPLE_IAP_ALLOW_UNVERIFIED === 'true' ||
+    (process.env.APPLE_IAP_ALLOW_UNVERIFIED !== 'false' && process.env.NODE_ENV !== 'production'),
   paymentPendingMinutes: Number(process.env.PAYMENT_PENDING_MINUTES || 30),
   paymentsEnabled: process.env.PAYMENTS_ENABLED !== 'false',
   defaultCurrency: (process.env.DEFAULT_CURRENCY || 'UYU').trim().toUpperCase(),

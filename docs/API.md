@@ -462,8 +462,8 @@ Or authorization code:
 
 | Plan | Monthly fee | Commission |
 |------|-------------|------------|
-| `basic` | Free | 10% |
-| `pro` | $29 | 8% |
+| `basic` (Freemium) | Free | 8% |
+| `pro` | $29 | 0% |
 | `institutional` | $99 | 5% |
 
 **Do not store card data** on Fitnexia servers; use Mercado Pago tokenization only.

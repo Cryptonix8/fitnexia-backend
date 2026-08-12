@@ -156,6 +156,7 @@ router.patch(
     const subscription = await gymSubscriptionService.updateTierForUser(
       req.user.id,
       req.body.tier,
+      { clientPlatform: String(req.headers['x-client-platform'] || '').toLowerCase() },
     );
     res.json(subscription);
   }),

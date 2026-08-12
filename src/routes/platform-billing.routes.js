@@ -7,15 +7,22 @@ const {
 } = require('../services/mercadopago.service');
 const platformBillingService = require('../services/platform-billing.service');
 const gymSubscriptionService = require('../services/gym-subscription.service');
+const appleIapService = require('../services/apple-iap.service');
 
 const router = Router();
+
+function clientPlatform(req) {
+  return String(req.headers['x-client-platform'] || req.body?.clientPlatform || '').toLowerCase();
+}
 
 router.post(
   '/gym/subscribe',
   requireAuth,
   requireRole('institution'),
   asyncHandler(async (req, res) => {
-    const result = await platformBillingService.startGymTierBilling(req.user.id, req.body.tier);
+    const result = await platformBillingService.startGymTierBilling(req.user.id, req.body.tier, {
+      clientPlatform: clientPlatform(req),
+    });
     res.json(result);
   }),
 );
@@ -28,8 +35,37 @@ router.post(
     const result = await platformBillingService.startInstructorPlanBilling(
       req.user.id,
       req.body.plan,
+      { clientPlatform: clientPlatform(req) },
     );
     res.json(result);
+  }),
+);
+
+/** iOS StoreKit — verify purchase and activate Fitnexia SaaS plan. */
+router.post(
+  '/apple/verify',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await appleIapService.verifyAndActivate(req.user, req.body);
+    res.json(result);
+  }),
+);
+
+router.post(
+  '/apple/restore',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await appleIapService.restorePurchases(req.user, req.body);
+    res.json(result);
+  }),
+);
+
+router.get(
+  '/apple/catalog',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const kind = req.query.kind === 'instructor' || req.query.kind === 'gym' ? req.query.kind : undefined;
+    res.json(appleIapService.getCatalog(kind));
   }),
 );
 
