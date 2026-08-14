@@ -3,9 +3,13 @@ const DISCIPLINES = require('../config/disciplines').DISCIPLINES;
 const { getPlans: getPlansFromConfig } = require('../config/plans');
 const { listTierCatalog } = require('./gym-subscription.service');
 
-const { defaultCurrency, livekitConfigured } = require('../config/env');
-const paymentsService = require('./payments.service');
+const { defaultCurrency, livekitConfigured, paymentsEnabled } = require('../config/env');
+const { isMercadoPagoConfigured, useMockPayments } = require('./mercadopago.service');
 const { getMarketplacePublicConfig } = require('../config/marketplace.config');
+
+function isPaymentsActive() {
+  return paymentsEnabled && (isMercadoPagoConfigured() || useMockPayments());
+}
 
 function getDisciplines() {
   return DISCIPLINES;
@@ -22,7 +26,7 @@ function getAppConfig() {
       googleSignIn: true,
       appleSignIn: true,
       geolocationMap: true,
-      integratedPayments: paymentsService.isPaymentsActive(),
+      integratedPayments: isPaymentsActive(),
       subscriptionPaymentModels: true,
       advancedSearch: true,
       waitlist: true,
@@ -47,7 +51,7 @@ function getAppConfig() {
 
 function getPaymentsConfig() {
   return {
-    enabled: paymentsService.isPaymentsActive(),
+    enabled: isPaymentsActive(),
     currency: defaultCurrency,
     provider: 'mercado_pago',
     marketplace: getMarketplacePublicConfig(),

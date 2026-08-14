@@ -17,7 +17,7 @@ const {
 } = require('./mercadopago.service');
 const { sendPaymentReceiptEmails } = require('./email.service');
 const notificationsService = require('./notifications.service');
-const { getPlans } = require('./config.service');
+const { getPlans } = require('../config/plans');
 const passesService = require('./passes.service');
 const marketplaceService = require('./marketplace.service');
 
