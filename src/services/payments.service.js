@@ -1,10 +1,8 @@
 const { query, pool } = require('../db/pool');
 const { notFound, forbidden, badRequest } = require('../utils/errors');
 const { serializeMoney } = require('../utils/serializers');
-const {
-  paymentsEnabled,
-  paymentPendingMinutes,
-} = require('../config/env');
+const { paymentPendingMinutes } = require('../config/env');
+const { isPaymentsActive } = require('./payments-active');
 const {
   isMercadoPagoConfigured,
   useMockPayments,
@@ -20,10 +18,6 @@ const notificationsService = require('./notifications.service');
 const { getPlans } = require('../config/plans');
 const passesService = require('./passes.service');
 const marketplaceService = require('./marketplace.service');
-
-function isPaymentsActive() {
-  return paymentsEnabled && (isMercadoPagoConfigured() || useMockPayments());
-}
 
 function serializePayment(row) {
   return {

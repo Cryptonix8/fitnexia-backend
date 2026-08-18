@@ -3,13 +3,9 @@ const DISCIPLINES = require('../config/disciplines').DISCIPLINES;
 const { getPlans: getPlansFromConfig } = require('../config/plans');
 const { listTierCatalog } = require('./gym-subscription.service');
 
-const { defaultCurrency, livekitConfigured, paymentsEnabled } = require('../config/env');
-const { isMercadoPagoConfigured, useMockPayments } = require('./mercadopago.service');
+const { defaultCurrency, livekitConfigured } = require('../config/env');
+const { isPaymentsActive } = require('./payments-active');
 const { getMarketplacePublicConfig } = require('../config/marketplace.config');
-
-function isPaymentsActive() {
-  return paymentsEnabled && (isMercadoPagoConfigured() || useMockPayments());
-}
 
 function getDisciplines() {
   return DISCIPLINES;
